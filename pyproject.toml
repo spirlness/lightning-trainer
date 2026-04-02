@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tiny-imagenet-trainer"
+version = "0.1.0"
+description = "A clean, beginner-friendly Tiny-ImageNet training demo."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "torch>=2.6",
+  "torchvision>=0.21",
+  "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+data = ["datasets>=3.0"]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+tiny-imagenet-train = "tiny_imagenet_trainer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tiny_imagenet_trainer*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

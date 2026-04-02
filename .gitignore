@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.pt
+*.pth
+.pytest_cache/
+.vscode/
+data/hf_cache/
+data/tiny_imagenet_local/
+logs/
+outputs/
+checkpoints/
+%SystemDrive%/
