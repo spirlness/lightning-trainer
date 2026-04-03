@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tiny-imagenet-trainer"
 version = "0.1.0"
-description = "A clean, beginner-friendly Tiny-ImageNet training demo."
+description = "A minimal, beginner-friendly Tiny-ImageNet training demo."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,7 +15,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-data = ["datasets>=3.0"]
 test = ["pytest>=8.0"]
 
 [project.scripts]

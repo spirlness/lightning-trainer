@@ -9,10 +9,7 @@ from tiny_imagenet_trainer.config import TrainingConfig
 
 
 def build_model(config: TrainingConfig, logger: logging.Logger | None = None) -> nn.Module:
-    """Build the vision backbone for the training run."""
-    if config.model_name != "resnet18":
-        raise ValueError("Only resnet18 is supported in this demo project.")
-
+    """Build the ResNet18 backbone for the training run."""
     weights = ResNet18_Weights.DEFAULT if config.pretrained else None
     try:
         model = resnet18(weights=weights)

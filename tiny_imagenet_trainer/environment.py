@@ -2,39 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import random
-import shutil
 from pathlib import Path
 
 import torch
 
 from tiny_imagenet_trainer.config import RunPaths, TrainingConfig
-
-
-def configure_runtime_environment(config: TrainingConfig) -> None:
-    """Set environment variables for predictable local execution."""
-    if "CC" not in os.environ:
-        compiler = shutil.which("clang")
-        if compiler:
-            os.environ["CC"] = compiler
-        else:
-            for fallback in (
-                "G:/msys2/ucrt64/bin/clang.exe",
-                "C:/msys2/ucrt64/bin/clang.exe",
-            ):
-                if Path(fallback).exists():
-                    os.environ["CC"] = fallback
-                    break
-
-    cache_root = config.dataset_cache_dir.resolve()
-    (cache_root / "datasets").mkdir(parents=True, exist_ok=True)
-    (cache_root / "hub").mkdir(parents=True, exist_ok=True)
-
-    os.environ.setdefault("HF_HOME", str(cache_root))
-    os.environ.setdefault("HF_DATASETS_CACHE", str((cache_root / "datasets").resolve()))
-    os.environ.setdefault("HF_HUB_CACHE", str((cache_root / "hub").resolve()))
-    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 
 def seed_everything(seed: int) -> None:
@@ -79,10 +52,6 @@ def configure_logger(log_file: Path) -> logging.Logger:
 
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
-
-    for noisy_logger in ("urllib3", "datasets", "huggingface_hub", "fsspec"):
-        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
-
     return logger
 
 

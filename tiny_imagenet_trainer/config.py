@@ -41,25 +41,15 @@ class RunPaths:
 
 @dataclass(slots=True)
 class TrainingConfig:
-    """Top-level training configuration."""
+    """Minimal training configuration for local Tiny-ImageNet runs."""
 
     experiment_name: str = "tiny-imagenet-resnet18"
     output_root: Path = Path("outputs")
+    data_dir: Path = Path("data") / "tiny_imagenet_local"
 
-    dataset_source: str = "local"
-    dataset_name: str = "zh-plus/tiny-imagenet"
-    dataset_cache_dir: Path = Path("data") / "hf_cache"
-    local_dataset_dir: Path = Path("data") / "tiny_imagenet_local"
-    train_split: str = "train"
-    val_split: str = "valid"
-    validation_split_ratio: float = 0.1
-    force_redownload: bool = False
-
-    model_name: str = "resnet18"
     num_classes: int = 200
     image_size: int = 224
     pretrained: bool = True
-    compile_model: bool = True
     enable_amp: bool = True
     device: str = "auto"
 
@@ -70,28 +60,13 @@ class TrainingConfig:
     warmup_steps: int = 50
     gradient_clip_norm: float | None = 1.0
     num_workers: int = field(default_factory=_default_worker_count)
-    max_train_batches: int | None = None
-    max_val_batches: int | None = 50
     log_every_n_steps: int = 10
-    checkpoint_every_n_epochs: int = 1
-    keep_last_n_checkpoints: int = 3
-    early_stopping_patience: int = 3
     seed: int = 42
-    resume_from: Path | None = None
-
-    mock_train_samples: int = 256
-    mock_val_samples: int = 64
 
     def __post_init__(self) -> None:
         self.output_root = Path(self.output_root)
-        self.dataset_cache_dir = Path(self.dataset_cache_dir)
-        self.local_dataset_dir = Path(self.local_dataset_dir)
-        self.resume_from = Path(self.resume_from) if self.resume_from else None
+        self.data_dir = Path(self.data_dir)
 
-        if self.dataset_source not in {"local", "huggingface", "mock"}:
-            raise ValueError("dataset_source must be 'local', 'huggingface', or 'mock'")
-        if self.model_name != "resnet18":
-            raise ValueError("Only model_name='resnet18' is currently supported")
         if self.device not in {"auto", "cpu", "cuda"}:
             raise ValueError("device must be one of: auto, cpu, cuda")
         if self.num_classes <= 0:
@@ -102,14 +77,12 @@ class TrainingConfig:
             raise ValueError("batch_size must be positive")
         if self.num_epochs <= 0:
             raise ValueError("num_epochs must be positive")
+        if self.warmup_steps < 0:
+            raise ValueError("warmup_steps must be non-negative")
         if self.num_workers < 0:
             raise ValueError("num_workers must be non-negative")
-        if self.checkpoint_every_n_epochs <= 0:
-            raise ValueError("checkpoint_every_n_epochs must be positive")
-        if self.keep_last_n_checkpoints <= 0:
-            raise ValueError("keep_last_n_checkpoints must be positive")
-        if not 0.0 < self.validation_split_ratio < 1.0:
-            raise ValueError("validation_split_ratio must be between 0 and 1")
+        if self.log_every_n_steps <= 0:
+            raise ValueError("log_every_n_steps must be positive")
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -119,9 +92,6 @@ class TrainingConfig:
         return payload
 
     def build_run_paths(self) -> RunPaths:
-        if self.resume_from:
-            return RunPaths.from_root(self.resume_from.resolve().parents[1])
-
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_name = f"{self.experiment_name}-{timestamp}"
         return RunPaths.from_root(self.output_root / run_name)
