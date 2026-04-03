@@ -1,20 +1,21 @@
+"""Training configuration with validation."""
 from __future__ import annotations
 
-import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 
-def _default_worker_count() -> int:
+def _default_workers() -> int:
+    """Default number of data loading workers."""
+    import os
     return min(2, os.cpu_count() or 1)
 
 
 @dataclass(slots=True)
 class RunPaths:
-    """Filesystem layout for a single training run."""
-
+    """Filesystem layout for a training run."""
     run_dir: Path
     checkpoints_dir: Path
     logs_dir: Path
@@ -24,6 +25,7 @@ class RunPaths:
 
     @classmethod
     def from_root(cls, run_dir: Path) -> "RunPaths":
+        """Create RunPaths and ensure directories exist."""
         run_dir = Path(run_dir)
         checkpoints_dir = run_dir / "checkpoints"
         logs_dir = run_dir / "logs"
@@ -41,57 +43,198 @@ class RunPaths:
 
 @dataclass(slots=True)
 class TrainingConfig:
-    """Minimal training configuration for local Tiny-ImageNet runs."""
+    """Training configuration with validation."""
 
-    experiment_name: str = "tiny-imagenet-resnet18"
-    output_root: Path = Path("outputs")
-    data_dir: Path = Path("data") / "tiny_imagenet_local"
+    # Experiment
+    experiment_name: str = field(
+        default="tiny-imagenet-resnet18",
+        metadata={
+            "group": "Experiment",
+            "help": "Name for this experiment",
+        },
+    )
+    output_root: Path = field(
+        default=Path("outputs"),
+        metadata={
+            "group": "Experiment",
+            "help": "Root directory for all experiment outputs",
+        },
+    )
 
-    num_classes: int = 200
-    image_size: int = 224
-    pretrained: bool = True
-    enable_amp: bool = True
-    device: str = "auto"
+    # Data
+    data_dir: Path = field(
+        default=Path("data") / "tiny_imagenet_local",
+        metadata={
+            "group": "Data",
+            "help": "Path to dataset directory with train/ and val/ subdirectories",
+        },
+    )
+    num_classes: int = field(
+        default=200,
+        metadata={
+            "group": "Data",
+            "help": "Number of classes in the dataset",
+            "cli_min": 1,
+            "cli_min_inclusive": True,
+        },
+    )
+    image_size: int = field(
+        default=224,
+        metadata={
+            "group": "Data",
+            "help": "Input image size (square)",
+            "cli_min": 1,
+            "cli_min_inclusive": True,
+        },
+    )
 
-    learning_rate: float = 1e-4
-    weight_decay: float = 1e-4
-    batch_size: int = 128
-    num_epochs: int = 10
-    warmup_steps: int = 50
-    gradient_clip_norm: float | None = 1.0
-    num_workers: int = field(default_factory=_default_worker_count)
-    log_every_n_steps: int = 10
-    seed: int = 42
+    # Model
+    pretrained: bool = field(
+        default=True,
+        metadata={
+            "group": "Model",
+            "help": "Use pretrained ImageNet weights",
+        },
+    )
+
+    # Training
+    learning_rate: float = field(
+        default=1e-4,
+        metadata={
+            "group": "Training",
+            "help": "Base learning rate",
+            "cli_min": 0.0,
+            "cli_min_inclusive": False,
+        },
+    )
+    weight_decay: float = field(
+        default=1e-4,
+        metadata={
+            "group": "Training",
+            "help": "Weight decay (L2 regularization)",
+            "cli_min": 0.0,
+            "cli_min_inclusive": True,
+        },
+    )
+    batch_size: int = field(
+        default=128,
+        metadata={
+            "group": "Training",
+            "help": "Batch size for training and validation",
+            "cli_min": 1,
+            "cli_min_inclusive": True,
+        },
+    )
+    num_epochs: int = field(
+        default=10,
+        metadata={
+            "group": "Training",
+            "help": "Number of training epochs",
+            "cli_min": 1,
+            "cli_min_inclusive": True,
+        },
+    )
+    warmup_steps: int = field(
+        default=50,
+        metadata={
+            "group": "Training",
+            "help": "Number of warmup steps for learning rate",
+            "cli_min": 0,
+            "cli_min_inclusive": True,
+        },
+    )
+    gradient_clip_norm: float | None = field(
+        default=1.0,
+        metadata={
+            "group": "Training",
+            "help": "Gradient clipping norm (None to disable)",
+            "cli_allow_none": True,
+            "cli_min": 0.0,
+            "cli_min_inclusive": False,
+        },
+    )
+
+    # Data loading
+    num_workers: int = field(
+        default_factory=_default_workers,
+        metadata={
+            "group": "Data Loading",
+            "help": "Number of data loading workers",
+            "cli_min": 0,
+            "cli_min_inclusive": True,
+        },
+    )
+
+    # Logging
+    log_every_n_steps: int = field(
+        default=10,
+        metadata={
+            "group": "Logging",
+            "help": "Log training metrics every N steps",
+            "cli_min": 1,
+            "cli_min_inclusive": True,
+        },
+    )
+
+    # Reproducibility
+    seed: int = field(
+        default=42,
+        metadata={
+            "group": "Reproducibility",
+            "help": "Random seed for reproducibility",
+        },
+    )
+
+    # Hardware
+    device: str = field(
+        default="auto",
+        metadata={
+            "group": "Hardware",
+            "help": "Device to use for training",
+            "choices": ["auto", "cpu", "cuda"],
+        },
+    )
+    enable_amp: bool = field(
+        default=True,
+        metadata={
+            "group": "Hardware",
+            "help": "Enable Automatic Mixed Precision",
+        },
+    )
 
     def __post_init__(self) -> None:
+        """Validate configuration and convert paths."""
         self.output_root = Path(self.output_root)
         self.data_dir = Path(self.data_dir)
 
-        if self.device not in {"auto", "cpu", "cuda"}:
-            raise ValueError("device must be one of: auto, cpu, cuda")
-        if self.num_classes <= 0:
-            raise ValueError("num_classes must be positive")
-        if self.image_size <= 0:
-            raise ValueError("image_size must be positive")
-        if self.batch_size <= 0:
-            raise ValueError("batch_size must be positive")
-        if self.num_epochs <= 0:
-            raise ValueError("num_epochs must be positive")
-        if self.warmup_steps < 0:
-            raise ValueError("warmup_steps must be non-negative")
-        if self.num_workers < 0:
-            raise ValueError("num_workers must be non-negative")
-        if self.log_every_n_steps <= 0:
-            raise ValueError("log_every_n_steps must be positive")
+        # Validation rules: (condition, error_message)
+        rules = [
+            (self.device in {"auto", "cpu", "cuda"}, f"Invalid device: {self.device}"),
+            (self.num_classes > 0, "num_classes must be positive"),
+            (self.image_size > 0, "image_size must be positive"),
+            (self.batch_size > 0, "batch_size must be positive"),
+            (self.num_epochs > 0, "num_epochs must be positive"),
+            (self.warmup_steps >= 0, "warmup_steps must be non-negative"),
+            (self.num_workers >= 0, "num_workers must be non-negative"),
+            (self.log_every_n_steps > 0, "log_every_n_steps must be positive"),
+            (self.learning_rate > 0, "learning_rate must be positive"),
+            (self.weight_decay >= 0, "weight_decay must be non-negative"),
+        ]
+
+        for condition, message in rules:
+            if not condition:
+                raise ValueError(message)
 
     def to_dict(self) -> dict[str, Any]:
-        payload = asdict(self)
-        for key, value in payload.items():
+        """Convert to dictionary with path serialization."""
+        result = asdict(self)
+        for key, value in result.items():
             if isinstance(value, Path):
-                payload[key] = str(value)
-        return payload
+                result[key] = str(value)
+        return result
 
     def build_run_paths(self) -> RunPaths:
+        """Create run paths with timestamp."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_name = f"{self.experiment_name}-{timestamp}"
         return RunPaths.from_root(self.output_root / run_name)
