@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
 
 from torch import nn
 from torchvision.models import ResNet18_Weights, resnet18

@@ -5,38 +5,14 @@ import json
 import logging
 import os
 import random
-from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generator, TypedDict
+from typing import Any
 
 import torch
 
 from tiny_imagenet_trainer.config import RunPaths, TrainingConfig
-
-if TYPE_CHECKING:
-    from types import FrameType
-
-
-class LogHandlerConfig(TypedDict, total=False):
-    """Configuration for a single log handler."""
-
-    level: int
-    formatter: str
-    filename: str | None
-    stream: Any | None
-
-
-class LoggerConfig(TypedDict, total=False):
-    """Structured configuration for logger setup."""
-
-    version: int
-    disable_existing_loggers: bool
-    formatters: dict[str, dict[str, str]]
-    handlers: dict[str, dict[str, Any]]
-    loggers: dict[str, dict[str, Any]]
-
 
 @dataclass(frozen=True, slots=True)
 class DeviceInfo:
@@ -175,11 +151,6 @@ def configure_logger(
 
     return logger
 
-
-# Backwards compatibility alias
-setup_logger = configure_logger
-
-
 def write_json(path: Path, data: object) -> None:
     """Write data to JSON file with consistent formatting.
 
@@ -206,6 +177,6 @@ def prepare_run(
         Tuple of (run_paths, logger)
     """
     run_paths = config.build_run_paths()
-    logger = setup_logger(run_paths.log_file)
+    logger = configure_logger(run_paths.log_file)
     write_json(run_paths.config_file, config.to_dict())
     return run_paths, logger

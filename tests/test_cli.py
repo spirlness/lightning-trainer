@@ -2,6 +2,7 @@ import argparse
 
 import pytest
 
+from tiny_imagenet_trainer import cli
 from tiny_imagenet_trainer.cli import build_parser, namespace_to_config
 from tiny_imagenet_trainer.config import TrainingConfig
 
@@ -51,3 +52,33 @@ def test_parser_still_rejects_invalid_positive_fields(tmp_path):
             "--batch-size",
             "0",
         )
+
+
+def test_main_resolves_device_before_expensive_setup(monkeypatch, tmp_path):
+    calls: list[str] = []
+
+    def _fail_fast(_preference: str):
+        calls.append("select_device")
+        raise RuntimeError("CUDA requested but not available")
+
+    def _unexpected(*_args, **_kwargs):
+        raise AssertionError("expensive setup should not run before device resolution")
+
+    monkeypatch.setattr(cli, "select_device", _fail_fast)
+    monkeypatch.setattr(cli, "prepare_run", _unexpected)
+    monkeypatch.setattr(cli, "build_dataloaders", _unexpected)
+    monkeypatch.setattr(cli, "build_model", _unexpected)
+
+    with pytest.raises(RuntimeError, match="CUDA requested but not available"):
+        cli.main(
+            [
+                "--device",
+                "cuda",
+                "--data-dir",
+                str(tmp_path / "dataset"),
+                "--output-root",
+                str(tmp_path),
+            ]
+        )
+
+    assert calls == ["select_device"]
