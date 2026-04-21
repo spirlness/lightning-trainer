@@ -3,5 +3,13 @@ torchvision>=0.21
 pillow>=10.0
 triton-windows==3.2.0.post21
 
+[dev]
+pytest>=8.0
+ruff>=0.3.0
+
+[log]
+tensorboard>=2.16.0
+wandb>=0.16.0
+
 [test]
 pytest>=8.0
