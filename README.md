@@ -1,31 +1,51 @@
-# Tiny-ImageNet Trainer
+# Tiny-ImageNet 训练框架 (Advanced Edition)
 
-这是一个进一步收口后的 Tiny-ImageNet 训练示例，只保留最核心的训练功能：
+这是一个达到生产级标准的 Tiny-ImageNet 视觉模型训练项目。在保留核心三文件极简架构 (`config.py`, `data.py`, `train.py`) 的基础上，我们深度集成了现代深度学习领域最有效的高阶训练与优化技术，能够显著提升模型的收敛速度、训练吞吐量及泛化性能上限。
 
-- 本地 `ImageFolder` 数据读取
-- `ResNet18` 分类模型
-- 训练 / 验证循环
-- `best.pt` / `last.pt` 检查点
-- 配置、日志、历史指标按运行目录保存
+## 🔥 核心高级特性
 
-## 项目结构
+本项目默认采用 **ConvNeXt-Tiny** (现代纯卷积网络基准)，并开箱即用支持以下关键优化：
+
+### 1. 计算加速与内存优化
+- **`torch.compile`**: 开启 PyTorch 2.x 的图编译优化 (JIT)，大幅加速计算。
+- **Channels Last (NHWC)**: 内存布局优化，更贴合 NVIDIA GPU 底层架构，最大化 Tensor Core 性能。
+- **AMP & TF32**: 自动混合精度与 TensorFloat-32 运算，在保持模型精度的前提下极速狂飙。
+
+### 2. 现代数据增强与正则化
+- **TrivialAugmentWide**: 无需调参、即插即用的先进自动化数据增强。
+- **MixUp & CutMix**: 在 Batch 级别进行图像与标签的混合操作，赋予模型极强的抗过拟合能力。
+- **Label Smoothing (0.1)**: 软化 One-Hot 标签，避免模型预测过度自信。
+
+### 3. 训练稳定性与收敛控制
+- **指数移动平均 (EMA)**: 维护一组模型权重的滑动平均值（衰减率0.999），在验证阶段使用 EMA 权重，显著提升精度波动稳定性和最终测试表现。
+- **SequentialLR 调度**: 科学的 `Linear Warmup` (线性预热) 结合 `Cosine Annealing` (余弦退火) 学习率下降策略，确保平稳且深度的收敛。
+
+## 📁 项目结构
 
 ```text
 tiny_imagenet_trainer/
-├── cli.py             # 命令行入口
-├── config.py          # 训练配置与运行目录
-├── data.py            # 本地数据集与 DataLoader
-├── environment.py     # 日志、随机种子、设备选择
-├── modeling.py        # ResNet18 构建
-├── checkpointing.py   # best / last 检查点保存
-└── trainer.py         # 训练与验证循环
+├── __init__.py    # 暴露出核心的配置和解析方法
+├── config.py      # 配置中心 (TrainingConfig) 及自动 CLI 构造
+├── data.py        # 囊括了 TrivialAugment、MixUp/CutMix 等高级增强的数据管道
+└── train.py       # 负责模型搭建、Compile、EMA同步、AMP 及主训练验证循环
 tests/
-main.py
+├── ...            # 高覆盖率的核心逻辑单元测试
+main.py            # 主程序执行入口
+pyproject.toml     # 环境与依赖配置（使用 uv 管理）
 ```
 
-## 数据目录
+## 🛠️ 环境依赖与安装
 
-训练前先准备本地数据目录：
+本项目使用现代 Python 环境管理器 `uv` 进行极速依赖管理。针对 Windows 用户，我们特别适配了 `triton-windows` 依赖，以支持 Windows 下的 `torch.compile`。
+
+```bash
+# 安装核心运行依赖（自动拉取 PyTorch CUDA 12.4 及 Triton Windows 版）
+uv sync
+```
+
+## 📂 数据目录要求
+
+请按照标准的 `ImageFolder` 格式准备本地数据集，路径结构要求如下：
 
 ```text
 data/tiny_imagenet_local/
@@ -37,27 +57,39 @@ data/tiny_imagenet_local/
     └── ...
 ```
 
-程序只读取本地数据，不再负责下载、缓存导出或伪造数据。
+## 🚀 运行训练
 
-## 运行训练
+推荐使用 `uv run` 确保在隔离环境中执行。
+
+**基础运行 (使用默认配置与 ConvNeXt-Tiny 模型)：**
 
 ```bash
-python main.py --data-dir data/tiny_imagenet_local --num-epochs 10
+uv run main.py --data-dir data/tiny_imagenet_local
 ```
 
-常用参数：
+**火力全开 (启用 torch.compile 及所有高级优化)：**
 
 ```bash
-python main.py ^
+uv run main.py ^
   --data-dir data/tiny_imagenet_local ^
-  --batch-size 128 ^
-  --num-workers 2 ^
-  --num-epochs 10 ^
-  --device cuda
+  --use-compile ^
+  --batch-size 64 ^
+  --num-epochs 100 ^
+  --learning-rate 4e-3
 ```
 
-## 适合新人先看的文件
+*注意：启用 `--use-compile` 会在第一个 Epoch 的首个 Batch 带来较长时间的即时编译（JIT）开销，这是正常现象。同时，由于集成了诸多高级特性，显存吃紧的显卡请适当调小 `--batch-size`（如 32）。*
 
-- `tiny_imagenet_trainer/config.py`
-- `tiny_imagenet_trainer/data.py`
-- `tiny_imagenet_trainer/trainer.py`
+执行 `--help` 可查看所有支持的高级超参数：
+
+```bash
+uv run main.py --help
+```
+
+## 📖 学习建议与阅读顺序
+
+本项目的代码经过仔细排版，逻辑非常清晰，非常适合用来学习如何写出工业级 PyTorch 训练代码。建议阅读顺序：
+
+1. **`config.py`**：了解如何管理这多达十几个的高级超参数开关，并通过 `@dataclass` 零侵入生成 CLI 接口。
+2. **`data.py`**：重点关注 MixUp/CutMix 联合数据增强在 DataLoader 层面的实现机制。
+3. **`train.py`**：深入理解 `torch.compile` 的切入点、EMA 更新周期的控制、以及包含混合精度的验证过程的实现方式。

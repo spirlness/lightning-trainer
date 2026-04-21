@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+tests/test_config.py
+tests/test_data.py
+tests/test_train.py
+tiny_imagenet_trainer/__init__.py
+tiny_imagenet_trainer/config.py
+tiny_imagenet_trainer/data.py
+tiny_imagenet_trainer/train.py
+tiny_imagenet_trainer.egg-info/PKG-INFO
+tiny_imagenet_trainer.egg-info/SOURCES.txt
+tiny_imagenet_trainer.egg-info/dependency_links.txt
+tiny_imagenet_trainer.egg-info/entry_points.txt
+tiny_imagenet_trainer.egg-info/requires.txt
+tiny_imagenet_trainer.egg-info/top_level.txt

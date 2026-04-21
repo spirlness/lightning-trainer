@@ -12,13 +12,14 @@ dependencies = [
   "torch>=2.6",
   "torchvision>=0.21",
   "pillow>=10.0",
+  "triton-windows==3.2.0.post21",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
 
 [project.scripts]
-tiny-imagenet-train = "tiny_imagenet_trainer.cli:main"
+tiny-imagenet-train = "tiny_imagenet_trainer.train:main"
 
 [tool.setuptools.packages.find]
 include = ["tiny_imagenet_trainer*"]
@@ -26,3 +27,16 @@ include = ["tiny_imagenet_trainer*"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }

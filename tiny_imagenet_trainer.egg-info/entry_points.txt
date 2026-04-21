@@ -1,0 +1,2 @@
+[console_scripts]
+tiny-imagenet-train = tiny_imagenet_trainer.train:main

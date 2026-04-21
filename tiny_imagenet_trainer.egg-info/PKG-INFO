@@ -1,0 +1,109 @@
+Metadata-Version: 2.4
+Name: tiny-imagenet-trainer
+Version: 0.1.0
+Summary: A minimal, beginner-friendly Tiny-ImageNet training demo.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: torch>=2.6
+Requires-Dist: torchvision>=0.21
+Requires-Dist: pillow>=10.0
+Requires-Dist: triton-windows==3.2.0.post21
+Provides-Extra: test
+Requires-Dist: pytest>=8.0; extra == "test"
+
+# Tiny-ImageNet Trainer
+
+这是一个经过极致精简和重构的 Tiny-ImageNet 训练示例，去除了过度设计的抽象层，采用 **核心三件套** 架构，只保留最纯粹、最核心的训练功能，极大地提升了可读性和易用性：
+
+- 本地标准 `ImageFolder` 数据读取与增强
+- `ResNet18` 分类模型（支持预训练权重与自定义输出层）
+- 内置自动混合精度 (AMP) 的训练与验证循环
+- 依据验证准确率自动保存 `best_model.pth` 与 `latest_model.pth` 检查点
+- 基于 `dataclasses` 动态生成的 CLI 命令行解析机制
+- 每次训练按时间戳隔离运行目录，自动生成规范化的指标日志和配置归档
+
+## 项目结构
+
+```text
+tiny_imagenet_trainer/
+├── __init__.py    # 暴露出核心的配置和解析方法
+├── config.py      # 配置中心 (TrainingConfig) 及自动 CLI 构造
+├── data.py        # 数据增强策略与 DataLoader 构建
+└── train.py       # 模型搭建、AMP 管理、环境初始化与主训练循环
+tests/
+├── test_config.py # 针对配置及 CLI 解析的测试
+├── test_data.py   # 数据加载与集成的测试
+└── test_train.py  # 训练组件追踪器与环境测试
+main.py            # 主程序执行入口
+pyproject.toml     # 环境与依赖配置（使用 uv 管理）
+```
+
+## 环境依赖与安装
+
+本项目使用现代 Python 环境管理器 `uv` 进行极速依赖管理，并且默认配置了 PyTorch CUDA 12.4 源以支持 GPU 加速。
+
+```bash
+# 1. 安装核心运行依赖（包含支持 CUDA 的 torch）
+uv sync
+
+# 2. 若需要运行 pytest 测试，可连同开发依赖一起安装
+uv sync --all-extras
+```
+
+## 数据目录要求
+
+训练前请按照标准的 ImageFolder 分类格式准备本地 Tiny-ImageNet 数据集，路径结构要求如下：
+
+```text
+data/tiny_imagenet_local/
+├── train/
+│   ├── class_001/
+│   └── ...
+└── val/
+    ├── class_001/
+    └── ...
+```
+
+*注意：本程序专注于训练核心流程，因此只支持读取本地数据，不再包含自动下载或伪造数据集的外部逻辑。*
+
+## 运行训练
+
+推荐使用 `uv run` 来确保代码运行在正确且被隔离的虚拟环境中：
+
+```bash
+uv run main.py --data-dir data/tiny_imagenet_local --num-epochs 10
+```
+
+如果您已激活环境（如 `(tiny-imagenet-trainer)`），也可直接使用：
+```bash
+python main.py --data-dir data/tiny_imagenet_local --num-epochs 10
+```
+
+**带完整参数组合的高阶运行示例：**
+
+```bash
+uv run main.py ^
+  --data-dir data/tiny_imagenet_local ^
+  --experiment-name resnet18_baseline ^
+  --batch-size 128 ^
+  --num-workers 4 ^
+  --num-epochs 20 ^
+  --learning-rate 1e-4 ^
+  --device cuda ^
+  --enable-amp
+
+
+
+执行 `--help` 可查看由配置类全自动映射出的完整支持参数清单：
+
+```bash
+uv run main.py --help
+```
+
+## 适合新手学习的阅读顺序
+
+强烈推荐按照以下顺序阅读本项目源码，这能够帮助您快速理解深度学习完整训练闭环的最简实现模式：
+
+1. **`tiny_imagenet_trainer/config.py`**：体验如何通过原生的 `@dataclass` 和类型提示，一行不写 Argparse 冗余代码就能全自动生成工业级命令行界面。
+2. **`tiny_imagenet_trainer/data.py`**：了解如何利用 `torchvision` 快速进行图像数据的中心裁剪、色彩抖动等增强处理以及多进程数据批量加载。
+3. **`tiny_imagenet_trainer/train.py`**：深入理解一条包含模型挂载、AMP混合精度处理、学习率优化器以及完善的度量日志（Logger）和模型存储（Checkpointing）的主训练循环。

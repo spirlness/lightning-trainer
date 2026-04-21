@@ -1,163 +1,101 @@
-"""Data loading and preprocessing."""
-from __future__ import annotations
+"""Tiny-ImageNet 数据加载流水线。
+负责数据的增强处理、归一化以及 DataLoader 的构建。
+"""
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import torch
-from torch.utils.data import DataLoader, Dataset
-from torchvision import transforms
-from torchvision.datasets import ImageFolder
-
-from tiny_imagenet_trainer.config import TrainingConfig
-
-# ImageNet normalization constants
-IMAGENET_MEAN = (0.485, 0.456, 0.406)
-IMAGENET_STD = (0.229, 0.224, 0.225)
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
 
 
-@dataclass(slots=True)
-class DataLoaders:
-    """Container for train and validation data loaders."""
-    train_loader: DataLoader
-    val_loader: DataLoader
-    num_classes: int
-    class_names: list[str]
+def build_transforms(is_train: bool, image_size: int = 224) -> transforms.Compose:
+    """构建数据预处理和增强流水线。
 
-
-class DictDataset(Dataset[dict[str, Any]]):
-    """Wrap tuple-style dataset to return dict samples.
-
-    Converts (image, label) tuples to {"pixel_values": image, "label": label} dicts
-    for consistent batch collation.
+    参数:
+        is_train: 是否为训练模式。训练模式下会加入随机增强。
+        image_size: 最终输入模型的图像尺寸。
     """
+    # ImageNet 标准归一化参数
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+    )
 
-    def __init__(self, dataset: Dataset[Any]) -> None:
-        self.dataset = dataset
-
-    def __len__(self) -> int:
-        return len(self.dataset)
-
-    def __getitem__(self, idx: int) -> dict[str, Any]:
-        image, label = self.dataset[idx]
-        return {"pixel_values": image, "label": label}
-
-
-def create_train_transforms(image_size: int) -> transforms.Compose:
-    """Create training transforms with augmentation."""
-    return transforms.Compose([
-        transforms.RandomResizedCrop(image_size, scale=(0.08, 1.0)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-    ])
-
-
-def create_val_transforms(image_size: int) -> transforms.Compose:
-    """Create validation transforms (no augmentation)."""
-    # Standard ImageNet validation resize followed by center crop
-    resize_size = int(image_size * 256 / 224)
-    return transforms.Compose([
-        transforms.Resize(resize_size),
-        transforms.CenterCrop(image_size),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-    ])
-
-
-def build_dataloaders(config: TrainingConfig, logger) -> DataLoaders:
-    """Build training and validation data loaders.
-
-    Args:
-        config: Training configuration
-        logger: Logger instance
-
-    Returns:
-        DataLoaders container with train/val loaders and class info
-
-    Raises:
-        FileNotFoundError: If dataset directories don't exist or are empty
-        ValueError: If train/val classes don't match or num_classes mismatch
-    """
-    train_dir = config.data_dir / "train"
-    val_dir = config.data_dir / "val"
-
-    # Validate dataset structure
-    _validate_dataset(train_dir, val_dir)
-
-    # Create datasets with appropriate transforms
-    train_ds = DictDataset(ImageFolder(
-        train_dir,
-        transform=create_train_transforms(config.image_size)
-    ))
-    val_ds = DictDataset(ImageFolder(
-        val_dir,
-        transform=create_val_transforms(config.image_size)
-    ))
-
-    # Validate class consistency
-    train_classes = train_ds.dataset.classes
-    val_classes = val_ds.dataset.classes
-
-    if train_classes != val_classes:
-        raise ValueError(
-            f"Train and validation classes don't match. "
-            f"Train: {len(train_classes)}, Val: {len(val_classes)}"
+    if is_train:
+        # 训练集：加入随机裁剪、翻转和自动增强策略以提升泛化能力
+        return transforms.Compose(
+            [
+                transforms.RandomResizedCrop(image_size),
+                transforms.RandomHorizontalFlip(),
+                transforms.TrivialAugmentWide(),  # 零超参数增强，自动选择最优策略
+                transforms.ToTensor(),
+                normalize,
+            ]
+        )
+    else:
+        # 验证集：采用缩放后中心裁剪，确保测试一致性
+        return transforms.Compose(
+            [
+                transforms.Resize(256),  # 先缩放到稍大的尺寸
+                transforms.CenterCrop(image_size),  # 中心裁剪到目标尺寸
+                transforms.ToTensor(),
+                normalize,
+            ]
         )
 
-    if len(train_classes) != config.num_classes:
-        raise ValueError(
-            f"config.num_classes ({config.num_classes}) doesn't match "
-            f"dataset classes ({len(train_classes)})"
+
+def build_dataloaders(
+    data_dir: Path | str,
+    batch_size: int = 128,
+    num_workers: int = 4,
+    image_size: int = 224,
+) -> tuple[DataLoader, DataLoader]:
+    """创建训练和验证集的 DataLoader。
+
+    参数:
+        data_dir: 数据集根目录，内部应包含 'train' 和 'val' 文件夹。
+        batch_size: 批处理大小。
+        num_workers: 多线程加载的线程数。
+        image_size: 图像尺寸。
+    """
+    data_dir = Path(data_dir)
+    train_dir = data_dir / "train"
+    val_dir = data_dir / "val"
+
+    # 检查路径是否存在
+    if not train_dir.exists() or not val_dir.exists():
+        raise FileNotFoundError(
+            f"Dataset not found at {data_dir}. Expected 'train' and 'val' subdirectories."
         )
 
-    # Create data loaders
-    loader_kwargs = _make_loader_kwargs(config)
-    train_loader = DataLoader(train_ds, shuffle=True, **loader_kwargs)
-    val_loader = DataLoader(val_ds, shuffle=False, **loader_kwargs)
-
-    logger.info(
-        "Loaded dataset: %d train, %d val samples, %d classes",
-        len(train_ds), len(val_ds), len(train_classes)
+    # 使用 ImageFolder 自动根据文件夹名分配标签
+    train_dataset = datasets.ImageFolder(
+        train_dir, transform=build_transforms(is_train=True, image_size=image_size)
     )
 
-    return DataLoaders(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        num_classes=len(train_classes),
-        class_names=train_classes,
+    val_dataset = datasets.ImageFolder(
+        val_dir, transform=build_transforms(is_train=False, image_size=image_size)
     )
 
-
-def _validate_dataset(train_dir: Path, val_dir: Path) -> None:
-    """Validate dataset directory structure."""
-    missing_message = (
-        "Expected a local imagefolder dataset with structure: "
-        "data_dir/{split}/class_name/image.jpg"
+    # 构建训练加载器：打乱顺序，丢弃最后一个不完整的 batch (防止 BatchNorm 报错)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available(),
+        persistent_workers=num_workers > 0,  # 避免每个 epoch 重建 worker 进程
+        drop_last=True,
     )
-    for split_dir, name in [(train_dir, "train"), (val_dir, "val")]:
-        if not split_dir.exists():
-            raise FileNotFoundError(
-                f"{name} directory not found: {split_dir}\n{missing_message.format(split=name)}"
-            )
 
-        # Check for class subdirectories
-        class_dirs = [p for p in split_dir.iterdir() if p.is_dir()]
-        if not class_dirs:
-            raise FileNotFoundError(
-                f"No class subdirectories found in {split_dir}\n{missing_message.format(split=name)}"
-            )
+    # 构建验证加载器：无需打乱
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available(),
+        persistent_workers=num_workers > 0,
+    )
 
-
-def _make_loader_kwargs(config: TrainingConfig) -> dict[str, Any]:
-    """Create DataLoader keyword arguments."""
-    kwargs: dict[str, Any] = {
-        "batch_size": config.batch_size,
-        "num_workers": config.num_workers,
-        "pin_memory": torch.cuda.is_available() and config.device != "cpu",
-        "persistent_workers": config.num_workers > 0,
-    }
-    if config.num_workers > 0:
-        kwargs["prefetch_factor"] = 2
-    return kwargs
+    return train_loader, val_loader

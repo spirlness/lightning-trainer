@@ -1,215 +1,66 @@
-"""Training configuration with validation."""
+"""配置管理与命令行参数解析模块。
+本模块定义了训练所需的全部超参数，并支持从命令行自动生成解析器。
+"""
+
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime
+import argparse
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, get_type_hints
 
 
-def _default_workers() -> int:
-    """Default number of data loading workers."""
-    import os
-    return min(2, os.cpu_count() or 1)
-
-
-@dataclass(slots=True)
-class RunPaths:
-    """Filesystem layout for a training run."""
-    run_dir: Path
-    checkpoints_dir: Path
-    logs_dir: Path
-    log_file: Path
-    config_file: Path
-    history_file: Path
-
-    @classmethod
-    def from_root(cls, run_dir: Path) -> "RunPaths":
-        """Create RunPaths and ensure directories exist."""
-        run_dir = Path(run_dir)
-        checkpoints_dir = run_dir / "checkpoints"
-        logs_dir = run_dir / "logs"
-        checkpoints_dir.mkdir(parents=True, exist_ok=True)
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        return cls(
-            run_dir=run_dir,
-            checkpoints_dir=checkpoints_dir,
-            logs_dir=logs_dir,
-            log_file=logs_dir / "train.log",
-            config_file=run_dir / "config.json",
-            history_file=run_dir / "history.json",
-        )
-
-
-@dataclass(slots=True)
+@dataclass
 class TrainingConfig:
-    """Training configuration with validation."""
+    """训练配置类，包含所有超参数及其验证逻辑。"""
 
-    # Experiment
-    experiment_name: str = field(
-        default="tiny-imagenet-resnet18",
-        metadata={
-            "group": "Experiment",
-            "help": "Name for this experiment",
-        },
-    )
-    output_root: Path = field(
-        default=Path("outputs"),
-        metadata={
-            "group": "Experiment",
-            "help": "Root directory for all experiment outputs",
-        },
-    )
+    # 基础路径配置
+    data_dir: Path = Path("data/tiny_imagenet_local")  # 数据集根目录
+    output_root: Path = Path("outputs")  # 训练结果保存根目录
+    experiment_name: str = "convnext_tiny_baseline"  # 实验名称，用于区分不同的运行
 
-    # Data
-    data_dir: Path = field(
-        default=Path("data") / "tiny_imagenet_local",
-        metadata={
-            "group": "Data",
-            "help": "Path to dataset directory with train/ and val/ subdirectories",
-        },
-    )
-    num_classes: int = field(
-        default=200,
-        metadata={
-            "group": "Data",
-            "help": "Number of classes in the dataset",
-            "cli_min": 1,
-            "cli_min_inclusive": True,
-        },
-    )
-    image_size: int = field(
-        default=224,
-        metadata={
-            "group": "Data",
-            "help": "Input image size (square)",
-            "cli_min": 1,
-            "cli_min_inclusive": True,
-        },
-    )
+    # 模型与训练超参数
+    model_name: str = "convnext_tiny"  # 模型架构: 'resnet18' 或 'convnext_tiny'
+    num_classes: int = 200  # 分类类别数 (Tiny-ImageNet 默认为 200)
+    image_size: int = 224  # 输入模型图像的尺寸
+    batch_size: int = 64  # 每个批次的样本数 (由于 ConvNeXt 显存占用大，调小至 64)
+    num_epochs: int = 1  # 总训练轮数
+    learning_rate: float = 1e-4  # 学习率
+    weight_decay: float = 1e-4  # 权重衰减 (L2 正则化)
+    warmup_steps: int = 50  # 学习率预热步数
+    gradient_clip_norm: float | None = 1.0  # 梯度裁剪阈值，防止梯度爆炸
+    label_smoothing: float = 0.1  # 标签平滑系数，防止过拟合
 
-    # Model
-    pretrained: bool = field(
-        default=True,
-        metadata={
-            "group": "Model",
-            "help": "Use pretrained ImageNet weights",
-        },
-    )
+    # 高级训练技术
+    use_mixup: bool = True  # 启用 MixUp + CutMix 数据混合增强
+    mixup_alpha: float = 0.2  # MixUp 混合强度
+    cutmix_alpha: float = 1.0  # CutMix 混合强度
+    use_ema: bool = True  # 启用指数移动平均 (EMA)
+    ema_decay: float = 0.999  # EMA 衰减率
+    use_compile: bool = True  # 启用 torch.compile (Windows 兼容性有限)
+    use_channels_last: bool = True  # 启用 channels_last 内存格式加速卷积
 
-    # Training
-    learning_rate: float = field(
-        default=1e-4,
-        metadata={
-            "group": "Training",
-            "help": "Base learning rate",
-            "cli_min": 0.0,
-            "cli_min_inclusive": False,
-        },
-    )
-    weight_decay: float = field(
-        default=1e-4,
-        metadata={
-            "group": "Training",
-            "help": "Weight decay (L2 regularization)",
-            "cli_min": 0.0,
-            "cli_min_inclusive": True,
-        },
-    )
-    batch_size: int = field(
-        default=128,
-        metadata={
-            "group": "Training",
-            "help": "Batch size for training and validation",
-            "cli_min": 1,
-            "cli_min_inclusive": True,
-        },
-    )
-    num_epochs: int = field(
-        default=10,
-        metadata={
-            "group": "Training",
-            "help": "Number of training epochs",
-            "cli_min": 1,
-            "cli_min_inclusive": True,
-        },
-    )
-    warmup_steps: int = field(
-        default=50,
-        metadata={
-            "group": "Training",
-            "help": "Number of warmup steps for learning rate",
-            "cli_min": 0,
-            "cli_min_inclusive": True,
-        },
-    )
-    gradient_clip_norm: float | None = field(
-        default=1.0,
-        metadata={
-            "group": "Training",
-            "help": "Gradient clipping norm (None to disable)",
-            "cli_allow_none": True,
-            "cli_min": 0.0,
-            "cli_min_inclusive": False,
-        },
-    )
-
-    # Data loading
-    num_workers: int = field(
-        default_factory=_default_workers,
-        metadata={
-            "group": "Data Loading",
-            "help": "Number of data loading workers",
-            "cli_min": 0,
-            "cli_min_inclusive": True,
-        },
-    )
-
-    # Logging
-    log_every_n_steps: int = field(
-        default=10,
-        metadata={
-            "group": "Logging",
-            "help": "Log training metrics every N steps",
-            "cli_min": 1,
-            "cli_min_inclusive": True,
-        },
-    )
-
-    # Reproducibility
-    seed: int = field(
-        default=42,
-        metadata={
-            "group": "Reproducibility",
-            "help": "Random seed for reproducibility",
-        },
-    )
-
-    # Hardware
-    device: str = field(
-        default="auto",
-        metadata={
-            "group": "Hardware",
-            "help": "Device to use for training",
-            "choices": ["auto", "cpu", "cuda"],
-        },
-    )
-    enable_amp: bool = field(
-        default=True,
-        metadata={
-            "group": "Hardware",
-            "help": "Enable Automatic Mixed Precision",
-        },
-    )
+    # 运行环境配置
+    num_workers: int = 2  # 数据加载的线程数
+    log_every_n_steps: int = 10  # 每隔多少个 step 记录一次日志
+    seed: int = 42  # 随机种子，确保实验可复现
+    device: str = "cuda"  # 运行设备: 'cuda', 'cpu' 或 'auto'
+    pretrained: bool = False  # 是否加载 ImageNet 预训练权重
+    enable_amp: bool = True  # 是否启用自动混合精度训练
 
     def __post_init__(self) -> None:
-        """Validate configuration and convert paths."""
+        """在 dataclass 初始化后执行的验证逻辑。"""
         self.output_root = Path(self.output_root)
         self.data_dir = Path(self.data_dir)
 
-        # Validation rules: (condition, error_message)
+        # 验证设备与模型类型
+        if self.device not in {"auto", "cpu", "cuda"}:
+            raise ValueError(f"Invalid device: {self.device}")
+        if self.model_name not in {"resnet18", "convnext_tiny"}:
+            raise ValueError(f"Invalid model_name: {self.model_name}")
+
+        # 数值合法性规则检查 (错误消息保持英文，便于调试和测试)
         rules = [
-            (self.device in {"auto", "cpu", "cuda"}, f"Invalid device: {self.device}"),
             (self.num_classes > 0, "num_classes must be positive"),
             (self.image_size > 0, "image_size must be positive"),
             (self.batch_size > 0, "batch_size must be positive"),
@@ -219,6 +70,8 @@ class TrainingConfig:
             (self.log_every_n_steps > 0, "log_every_n_steps must be positive"),
             (self.learning_rate > 0, "learning_rate must be positive"),
             (self.weight_decay >= 0, "weight_decay must be non-negative"),
+            (0.0 <= self.label_smoothing < 1.0, "label_smoothing must be in [0, 1)"),
+            (0.0 < self.ema_decay < 1.0, "ema_decay must be in (0, 1)"),
         ]
 
         for condition, message in rules:
@@ -226,15 +79,90 @@ class TrainingConfig:
                 raise ValueError(message)
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary with path serialization."""
-        result = asdict(self)
-        for key, value in result.items():
-            if isinstance(value, Path):
-                result[key] = str(value)
-        return result
+        """将配置转换为字典格式，并将 Path 对象序列化为字符串，便于保存为 JSON。"""
+        return {
+            k: str(v) if isinstance(v, Path) else v for k, v in asdict(self).items()
+        }
 
-    def build_run_paths(self) -> RunPaths:
-        """Create run paths with timestamp."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = f"{self.experiment_name}-{timestamp}"
-        return RunPaths.from_root(self.output_root / run_name)
+
+def build_parser() -> argparse.ArgumentParser:
+    """根据 TrainingConfig 的字段自动生成命令行参数解析器。
+    该方法利用类型提示 (Type Hints) 自动映射 argparse 的 type 和 default。
+    """
+    parser = argparse.ArgumentParser(
+        prog="tiny-imagenet-train",
+        description="基于 ResNet18 的 Tiny-ImageNet 分类训练脚本",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    defaults = TrainingConfig()
+    hints = get_type_hints(TrainingConfig)
+
+    for f in fields(TrainingConfig):
+        # 将 python 风格的变量名 (batch_size) 转换为 CLI 风格 (--batch-size)
+        name = f"--{f.name.replace('_', '-')}"
+        tp = hints[f.name]
+        default_val = getattr(defaults, f.name)
+
+        # 提取 Union 类型中的参数 (例如处理 Optional[int])
+        args = getattr(tp, "__args__", ())
+
+        is_optional = False
+        actual_type = tp
+        if type(None) in args:
+            is_optional = True
+            actual_type = next(t for t in args if t is not type(None))
+
+        # 特殊处理 choices
+        if f.name == "device":
+            parser.add_argument(
+                name,
+                type=str,
+                choices=["auto", "cpu", "cuda"],
+                default=default_val,
+                help="运行计算的设备",
+            )
+        elif f.name == "model_name":
+            parser.add_argument(
+                name,
+                type=str,
+                choices=["resnet18", "convnext_tiny"],
+                default=default_val,
+                help="模型架构",
+            )
+        # 特殊处理布尔值：生成 --flag 和 --no-flag 两个选项
+        elif actual_type is bool:
+            dest = f.name
+            parser.add_argument(
+                name, dest=dest, action="store_true", default=default_val
+            )
+            parser.add_argument(
+                f"--no-{f.name.replace('_', '-')}",
+                dest=dest,
+                action="store_false",
+                help=argparse.SUPPRESS,
+            )
+        # 处理路径
+        elif actual_type is Path:
+            parser.add_argument(name, type=Path, default=default_val)
+        # 处理可选类型 (Optional)
+        elif is_optional:
+
+            def optional_type(val: str, _type=actual_type) -> Any:
+                if val.lower() == "none":
+                    return None
+                return _type(val)
+
+            parser.add_argument(name, type=optional_type, default=default_val)
+        # 普通数值和字符串
+        else:
+            parser.add_argument(name, type=actual_type, default=default_val)
+
+    return parser
+
+
+def parse_args(args: list[str] | None = None) -> TrainingConfig:
+    """解析命令行参数并返回填充好的 TrainingConfig 对象。"""
+    parser = build_parser()
+    parsed_args = parser.parse_args(args)
+    return TrainingConfig(**vars(parsed_args))

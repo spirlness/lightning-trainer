@@ -1,41 +1,41 @@
-from tiny_imagenet_trainer.cli import build_parser, namespace_to_config
-from tiny_imagenet_trainer.config import TrainingConfig
+import pytest
+from pathlib import Path
+from tiny_imagenet_trainer.config import TrainingConfig, build_parser, parse_args
 
 
-def test_training_config_serializes_paths(tmp_path):
-    config = TrainingConfig(output_root=tmp_path, data_dir=tmp_path / "dataset")
-
-    payload = config.to_dict()
-
-    assert payload["output_root"] == str(tmp_path)
-    assert payload["data_dir"] == str(tmp_path / "dataset")
-
-
-def test_cli_overrides_are_applied(tmp_path):
-    parser = build_parser()
-    args = parser.parse_args(
-        [
-            "--data-dir",
-            str(tmp_path / "dataset"),
-            "--output-root",
-            str(tmp_path),
-            "--num-epochs",
-            "2",
-            "--no-pretrained",
-        ]
-    )
-
-    config = namespace_to_config(args)
-
-    assert config.data_dir == tmp_path / "dataset"
-    assert config.output_root == tmp_path
-    assert config.num_epochs == 2
-    assert config.pretrained is False
-
-
-def test_default_training_config_is_minimal_local_setup():
+def test_default_config():
     config = TrainingConfig()
+    assert config.num_classes == 200
+    assert config.batch_size == 256
+    assert config.device in {"auto", "cpu", "cuda"}
 
-    assert config.data_dir.name == "tiny_imagenet_local"
-    assert config.batch_size == 128
-    assert config.num_workers == 2
+
+def test_config_validation():
+    with pytest.raises(ValueError, match="num_classes must be positive"):
+        TrainingConfig(num_classes=0)
+
+    with pytest.raises(ValueError, match="batch_size must be positive"):
+        TrainingConfig(batch_size=-1)
+
+    with pytest.raises(ValueError, match="Invalid device"):
+        TrainingConfig(device="tpu")
+
+
+def test_config_serialization():
+    config = TrainingConfig(data_dir=Path("test/path"))
+    d = config.to_dict()
+    assert isinstance(d["data_dir"], str)
+    assert d["data_dir"] == str(Path("test/path"))
+
+
+def test_cli_parser():
+    parser = build_parser()
+    args = parser.parse_args(["--batch-size", "64", "--no-pretrained"])
+    assert args.batch_size == 64
+    assert args.pretrained is False
+
+
+def test_parse_args():
+    config = parse_args(["--learning-rate", "0.01", "--device", "cpu"])
+    assert config.learning_rate == 0.01
+    assert config.device == "cpu"

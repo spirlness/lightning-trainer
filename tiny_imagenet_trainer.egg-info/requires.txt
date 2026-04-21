@@ -1,0 +1,7 @@
+torch>=2.6
+torchvision>=0.21
+pillow>=10.0
+triton-windows==3.2.0.post21
+
+[test]
+pytest>=8.0
