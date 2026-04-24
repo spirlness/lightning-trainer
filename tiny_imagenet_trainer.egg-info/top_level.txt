@@ -1,1 +1,0 @@
-tiny_imagenet_trainer

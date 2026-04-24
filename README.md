@@ -1,95 +1,122 @@
-# Tiny-ImageNet 训练框架 (Advanced Edition)
+# Lightning Trainer
 
-这是一个达到生产级标准的 Tiny-ImageNet 视觉模型训练项目。在保留核心三文件极简架构 (`config.py`, `data.py`, `train.py`) 的基础上，我们深度集成了现代深度学习领域最有效的高阶训练与优化技术，能够显著提升模型的收敛速度、训练吞吐量及泛化性能上限。
+极简的 PyTorch Lightning Tiny-ImageNet 训练框架，专注于核心功能和优化。
 
-## 🔥 核心高级特性
+## 特性
 
-本项目默认采用 **ConvNeXt-Tiny** (现代纯卷积网络基准)，并开箱即用支持以下关键优化：
+- **极简架构**: 仅 3 个核心文件，~350 行代码
+- **PyTorch Lightning**: 自动处理设备管理、混合精度、checkpoint
+- **核心优化**: torch.compile、梯度检查点、融合优化器、channels_last
 
-### 1. 计算加速与内存优化
-- **`torch.compile`**: 开启 PyTorch 2.x 的图编译优化 (JIT)，大幅加速计算。
-- **Channels Last (NHWC)**: 内存布局优化，更贴合 NVIDIA GPU 底层架构，最大化 Tensor Core 性能。
-- **AMP & TF32**: 自动混合精度与 TensorFloat-32 运算，在保持模型精度的前提下极速狂飙。
+## 项目结构
 
-### 2. 现代数据增强与正则化
-- **TrivialAugmentWide**: 无需调参、即插即用的先进自动化数据增强。
-- **MixUp & CutMix**: 在 Batch 级别进行图像与标签的混合操作，赋予模型极强的抗过拟合能力。
-- **Label Smoothing (0.1)**: 软化 One-Hot 标签，避免模型预测过度自信。
+```
+lightning_trainer/
+├── __init__.py   # 包初始化
+├── data.py       # TinyImageNetDataModule (~95行)
+├── model.py      # ImageClassifier (~105行)
+└── train.py      # CLI入口 (~150行)
 
-### 3. 训练稳定性与收敛控制
-- **指数移动平均 (EMA)**: 维护一组模型权重的滑动平均值（衰减率0.999），在验证阶段使用 EMA 权重，显著提升精度波动稳定性和最终测试表现。
-- **SequentialLR 调度**: 科学的 `Linear Warmup` (线性预热) 结合 `Cosine Annealing` (余弦退火) 学习率下降策略，确保平稳且深度的收敛。
+data/                          # 数据目录
+├── tiny-imagenet-200/         # 完整数据集 (100k训练/10k验证)
+└── tiny_imagenet_local/       # 测试子集
 
-## 📁 项目结构
-
-```text
-tiny_imagenet_trainer/
-├── __init__.py    # 暴露出核心的配置和解析方法
-├── config.py      # 配置中心 (TrainingConfig) 及自动 CLI 构造
-├── data.py        # 囊括了 TrivialAugment、MixUp/CutMix 等高级增强的数据管道
-└── train.py       # 负责模型搭建、Compile、EMA同步、AMP 及主训练验证循环
-tests/
-├── ...            # 高覆盖率的核心逻辑单元测试
-main.py            # 主程序执行入口
-pyproject.toml     # 环境与依赖配置（使用 uv 管理）
+download_data.py               # 数据下载脚本
 ```
 
-## 🛠️ 环境依赖与安装
-
-本项目使用现代 Python 环境管理器 `uv` 进行极速依赖管理。针对 Windows 用户，我们特别适配了 `triton-windows` 依赖，以支持 Windows 下的 `torch.compile`。
+## 安装
 
 ```bash
-# 安装核心运行依赖（自动拉取 PyTorch CUDA 12.4 及 Triton Windows 版）
 uv sync
 ```
 
-## 📂 数据目录要求
+## 数据准备
 
-请按照标准的 `ImageFolder` 格式准备本地数据集，路径结构要求如下：
+```bash
+# 下载完整 Tiny-ImageNet (约 240MB)
+python download_data.py --method huggingface
 
-```text
-data/tiny_imagenet_local/
-├── train/
-│   ├── class_001/
+# 或创建测试子集 (10类 x 100张)
+python download_data.py --method subset --num-classes 10 --images-per-class 100
+```
+
+## 训练
+
+```bash
+# 基础训练
+python -m lightning_trainer.train --data-dir data/tiny-imagenet-200
+
+# 启用所有优化
+python -m lightning_trainer.train \
+    --data-dir data/tiny-imagenet-200 \
+    --batch-size 128 \
+    --max-epochs 10 \
+    --compile \
+    --gradient-checkpointing \
+    --fused-optimizer
+
+# 训练后测试
+python -m lightning_trainer.train \
+    --data-dir data/tiny-imagenet-200 \
+    --compile \
+    --test
+```
+
+## 参数说明
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--data-dir` | `data/tiny-imagenet-200` | 数据集目录 |
+| `--batch-size` | `128` | 批次大小 |
+| `--num-workers` | `2` | 数据加载线程数 |
+| `--model-name` | `convnext_tiny` | 模型: `convnext_tiny` 或 `resnet18` |
+| `--lr` | `1e-4` | 学习率 |
+| `--max-epochs` | `10` | 训练轮数 |
+| `--compile` | 否 | 启用 torch.compile (需要 MSVC) |
+| `--gradient-checkpointing` | 否 | 启用梯度检查点 (节省46%显存) |
+| `--fused-optimizer` | 否 | 启用融合 AdamW |
+| `--no-pretrained` | 否 | 不使用预训练权重 |
+| `--test` | 否 | 训练后运行测试集 |
+
+## 优化效果
+
+| 优化 | 效果 |
+|------|------|
+| torch.compile | ~36% 加速 |
+| 梯度检查点 | ~46% 显存节省 |
+| 融合优化器 | ~3% 加速 |
+| 混合精度 (默认) | ~30% 加速 |
+| channels_last (默认) | ~10% 加速 |
+
+## 环境变量 (Windows torch.compile)
+
+```bash
+# 自定义 MSVC 路径
+set MSVC_PATH=F:\Program Files (x86)\vs 2026
+set MSVC_VERSION=14.51.36014
+
+# 自定义 Windows SDK 路径
+set WINDOWS_SDK_PATH=C:\Program Files (x86)\Windows Kits\10
+```
+
+## 数据集结构
+
+```
+data/tiny-imagenet-200/
+├── train/          # 必需 - 训练集
+│   ├── n01443537/
+│   │   └── images/*.JPEG
 │   └── ...
-└── val/
-    ├── class_001/
+├── val/            # 必需 - 验证集
+│   └── ...
+└── test/           # 可选 - 测试集
     └── ...
 ```
 
-## 🚀 运行训练
+## 依赖
 
-推荐使用 `uv run` 确保在隔离环境中执行。
-
-**基础运行 (使用默认配置与 ConvNeXt-Tiny 模型)：**
-
-```bash
-uv run main.py --data-dir data/tiny_imagenet_local
-```
-
-**火力全开 (启用 torch.compile 及所有高级优化)：**
-
-```bash
-uv run main.py ^
-  --data-dir data/tiny_imagenet_local ^
-  --use-compile ^
-  --batch-size 64 ^
-  --num-epochs 100 ^
-  --learning-rate 4e-3
-```
-
-*注意：启用 `--use-compile` 会在第一个 Epoch 的首个 Batch 带来较长时间的即时编译（JIT）开销，这是正常现象。同时，由于集成了诸多高级特性，显存吃紧的显卡请适当调小 `--batch-size`（如 32）。*
-
-执行 `--help` 可查看所有支持的高级超参数：
-
-```bash
-uv run main.py --help
-```
-
-## 📖 学习建议与阅读顺序
-
-本项目的代码经过仔细排版，逻辑非常清晰，非常适合用来学习如何写出工业级 PyTorch 训练代码。建议阅读顺序：
-
-1. **`config.py`**：了解如何管理这多达十几个的高级超参数开关，并通过 `@dataclass` 零侵入生成 CLI 接口。
-2. **`data.py`**：重点关注 MixUp/CutMix 联合数据增强在 DataLoader 层面的实现机制。
-3. **`train.py`**：深入理解 `torch.compile` 的切入点、EMA 更新周期的控制、以及包含混合精度的验证过程的实现方式。
+- Python >= 3.11
+- PyTorch >= 2.0
+- PyTorch Lightning >= 2.0
+- torchvision
+- triton-windows (Windows)

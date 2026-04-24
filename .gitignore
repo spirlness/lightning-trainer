@@ -4,9 +4,12 @@ __pycache__/
 *.pth
 .pytest_cache/
 .vscode/
-data/hf_cache/
-data/tiny_imagenet_local/
+data/
 logs/
 outputs/
 checkpoints/
-%SystemDrive%/
+lightning_logs/
+.venv/
+uv.lock
+*.egg-info/
+.claude/

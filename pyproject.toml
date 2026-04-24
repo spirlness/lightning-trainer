@@ -3,38 +3,27 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tiny-imagenet-trainer"
+name = "lightning-trainer"
 version = "0.1.0"
-description = "A minimal, beginner-friendly Tiny-ImageNet training demo."
+description = "Minimal PyTorch Lightning trainer for Tiny-ImageNet"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "torch>=2.6",
-  "torchvision>=0.21",
+  "torch",
+  "torchvision",
   "pillow>=10.0",
-  "triton-windows==3.2.0.post21",
+  "triton-windows==3.6.0.post26",
+  "pytorch-lightning>=2.0",
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.0"]
-dev = [
-    "pytest>=8.0",
-    "ruff>=0.3.0",
-]
-log = [
-    "tensorboard>=2.16.0",
-    "wandb>=0.16.0",
-]
+dev = ["pytest>=8.0", "ruff>=0.3.0"]
 
 [project.scripts]
-tiny-imagenet-train = "tiny_imagenet_trainer.train:main"
+train = "lightning_trainer.train:main"
 
 [tool.setuptools.packages.find]
-include = ["tiny_imagenet_trainer*"]
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["tests"]
+include = ["lightning_trainer*"]
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple/"
@@ -42,7 +31,7 @@ default = true
 
 [[tool.uv.index]]
 name = "pytorch"
-url = "https://download.pytorch.org/whl/cu124"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.uv.sources]
@@ -61,5 +50,3 @@ ignore = []
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "auto"
