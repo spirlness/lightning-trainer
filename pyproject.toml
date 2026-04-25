@@ -61,3 +61,9 @@ filterwarnings = [
   "ignore:The 'val_dataloader' does not have many workers:UserWarning",
   "ignore:The 'train_dataloader' does not have many workers:UserWarning",
 ]
+
+[dependency-groups]
+dev = [
+    "datasets>=4.8.4",
+    "pillow>=12.2.0",
+]
