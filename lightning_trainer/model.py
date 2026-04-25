@@ -86,13 +86,11 @@ class ImageClassifier(LightningModule):
 
     def _shared_step(self, batch, prefix: str):
         images, labels = batch
-        memory_format = (
-            torch.channels_last
-            if self.hparams.use_channels_last
-            else torch.preserve_format
-        )
-        images = images.to(dtype=self.dtype, memory_format=memory_format)
-        images.div_(255.0).sub_(self.mean).div_(self.std)
+        if self.hparams.use_channels_last:
+            images = images.to(memory_format=torch.channels_last)
+        images = images.to(self.dtype)
+        images.div_(255.0)
+        images.sub_(self.mean).div_(self.std)
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
