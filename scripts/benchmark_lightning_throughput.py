@@ -14,7 +14,7 @@ import torch
 from pytorch_lightning.callbacks import Callback
 
 from lightning_trainer.data import TinyImageNetDataModule
-from lightning_trainer.model import ImageClassifier
+from lightning_trainer.model import ImageClassifier, ImageClassifierConfig
 from lightning_trainer.train import setup_msvc
 
 
@@ -114,13 +114,15 @@ def main() -> None:
     data_module.setup("fit")
 
     model = ImageClassifier(
-        num_classes=data_module.num_classes,
-        lr=args.lr,
-        max_epochs=1,
-        compile_model=compile_model,
-        use_fused_optimizer=not args.no_fused_optimizer,
-        use_channels_last=True,
-        pretrained=not args.no_pretrained,
+        ImageClassifierConfig(
+            num_classes=data_module.num_classes,
+            lr=args.lr,
+            max_epochs=1,
+            compile_model=compile_model,
+            use_fused_optimizer=not args.no_fused_optimizer,
+            use_channels_last=True,
+            pretrained=not args.no_pretrained,
+        )
     )
 
     benchmark_batches = None if args.full_epoch else args.benchmark_batches

@@ -1,6 +1,7 @@
 """极简训练模块 - PyTorch Lightning Module."""
 
 import warnings
+from dataclasses import asdict, dataclass
 
 import torch
 import torch.nn as nn
@@ -9,33 +10,42 @@ from pytorch_lightning import LightningModule
 from torchvision.models import ConvNeXt_Tiny_Weights, convnext_tiny
 
 
+@dataclass
+class ImageClassifierConfig:
+    num_classes: int = 200
+    lr: float = 1e-4
+    weight_decay: float = 1e-4
+    max_epochs: int = 10
+    compile_model: bool = True
+    use_gradient_checkpointing: bool = False
+    use_fused_optimizer: bool = True
+    use_channels_last: bool = True
+    pretrained: bool = True
+
+
 class ImageClassifier(LightningModule):
     """图像分类器 - 支持核心优化"""
 
     def __init__(
         self,
-        num_classes: int = 200,
-        lr: float = 1e-4,
-        weight_decay: float = 1e-4,
-        max_epochs: int = 10,
-        compile_model: bool = True,
-        use_gradient_checkpointing: bool = False,
-        use_fused_optimizer: bool = True,
-        use_channels_last: bool = True,
-        pretrained: bool = True,
+        config: ImageClassifierConfig | None = None,
+        **kwargs,
     ):
         super().__init__()
-        self.save_hyperparameters()
+        if config is None:
+            config = ImageClassifierConfig(**kwargs)
+        self.config = config
+        self.save_hyperparameters(asdict(config))
 
         # 构建模型
-        weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+        weights = ConvNeXt_Tiny_Weights.DEFAULT if config.pretrained else None
         self.model = convnext_tiny(weights=weights)
         self.model.classifier[2] = nn.Linear(
-            self.model.classifier[2].in_features, num_classes
+            self.model.classifier[2].in_features, config.num_classes
         )
 
         # 梯度检查点
-        if use_gradient_checkpointing:
+        if config.use_gradient_checkpointing:
             enable_checkpointing = getattr(
                 self.model, "gradient_checkpointing_enable", None
             )
@@ -50,13 +60,13 @@ class ImageClassifier(LightningModule):
                 enable_checkpointing()
 
         # torch.compile (在 setup 后应用)
-        self._should_compile = compile_model
+        self._should_compile = config.compile_model
         self._compiled = False
 
-        self.lr = lr
-        self.weight_decay = weight_decay
-        self.max_epochs = max_epochs
-        self.use_fused_optimizer = use_fused_optimizer
+        self.lr = config.lr
+        self.weight_decay = config.weight_decay
+        self.max_epochs = config.max_epochs
+        self.use_fused_optimizer = config.use_fused_optimizer
 
         self.register_buffer(
             "mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
