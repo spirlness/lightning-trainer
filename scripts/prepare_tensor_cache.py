@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import json
 import shutil
 from pathlib import Path
@@ -31,12 +30,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splits", nargs="+", default=["train", "val"])
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
-
-
-def process_sample(args: tuple[str, int, int]) -> tuple[int, bytes]:
-    path, label, image_size = args
-    tensor = convert_image(path, image_size)
-    return label, tensor.numpy().tobytes()
 
 
 def convert_image(path: str, image_size: int) -> torch.Tensor:
@@ -76,16 +69,12 @@ def prepare_split(
     print(f"[build] {split}: {len(dataset.samples)} images -> {images_path}")
 
     with images_path.open("wb") as images_file:
-        args_iter = ((path, label, image_size) for path, label in dataset.samples)
-        torch.set_num_threads(1)
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            for index, (label, image_bytes) in enumerate(
-                executor.map(process_sample, args_iter, chunksize=100)
-            ):
-                images_file.write(image_bytes)
-                labels[index] = label
-                if (index + 1) % 5000 == 0:
-                    print(f"  {split}: {index + 1}/{len(dataset.samples)}")
+        for index, (path, label) in enumerate(dataset.samples):
+            tensor = convert_image(path, image_size)
+            images_file.write(tensor.numpy().tobytes())
+            labels[index] = label
+            if (index + 1) % 5000 == 0:
+                print(f"  {split}: {index + 1}/{len(dataset.samples)}")
 
     torch.save(labels, split_cache_dir / "labels.pt")
     manifest = {
