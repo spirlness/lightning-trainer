@@ -86,10 +86,13 @@ class ImageClassifier(LightningModule):
 
     def training_step(self, batch, batch_idx):
         images, labels = batch
-        if self.hparams.use_channels_last:
-            images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype) / 255.0
-        images = (images - self.mean) / self.std
+        memory_format = (
+            torch.channels_last
+            if self.hparams.use_channels_last
+            else torch.preserve_format
+        )
+        images = images.to(dtype=self.dtype, memory_format=memory_format)
+        images.div_(255.0).sub_(self.mean).div_(self.std)
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
@@ -99,10 +102,13 @@ class ImageClassifier(LightningModule):
 
     def validation_step(self, batch, batch_idx):
         images, labels = batch
-        if self.hparams.use_channels_last:
-            images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype) / 255.0
-        images = (images - self.mean) / self.std
+        memory_format = (
+            torch.channels_last
+            if self.hparams.use_channels_last
+            else torch.preserve_format
+        )
+        images = images.to(dtype=self.dtype, memory_format=memory_format)
+        images.div_(255.0).sub_(self.mean).div_(self.std)
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
@@ -111,10 +117,13 @@ class ImageClassifier(LightningModule):
 
     def test_step(self, batch, batch_idx):
         images, labels = batch
-        if self.hparams.use_channels_last:
-            images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype) / 255.0
-        images = (images - self.mean) / self.std
+        memory_format = (
+            torch.channels_last
+            if self.hparams.use_channels_last
+            else torch.preserve_format
+        )
+        images = images.to(dtype=self.dtype, memory_format=memory_format)
+        images.div_(255.0).sub_(self.mean).div_(self.std)
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
