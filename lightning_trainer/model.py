@@ -1,9 +1,12 @@
-"""极简训练模块 - PyTorch Lightning Module"""
+"""极简训练模块 - PyTorch Lightning Module."""
+
+import warnings
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
-from torchvision.models import ConvNeXt_Tiny_Weights, convnext_tiny, ResNet18_Weights, resnet18
+from torchvision.models import ConvNeXt_Tiny_Weights, convnext_tiny
 
 
 class ImageClassifier(LightningModule):
@@ -11,7 +14,6 @@ class ImageClassifier(LightningModule):
 
     def __init__(
         self,
-        model_name: str = "convnext_tiny",
         num_classes: int = 200,
         lr: float = 1e-4,
         weight_decay: float = 1e-4,
@@ -25,37 +27,45 @@ class ImageClassifier(LightningModule):
         self.save_hyperparameters()
 
         # 构建模型
-        if model_name == "convnext_tiny":
-            weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
-            self.model = convnext_tiny(weights=weights)
-            self.model.classifier[2] = nn.Linear(
-                self.model.classifier[2].in_features, num_classes
-            )
-        else:  # resnet18
-            weights = ResNet18_Weights.DEFAULT if pretrained else None
-            self.model = resnet18(weights=weights)
-            self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
+        weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+        self.model = convnext_tiny(weights=weights)
+        self.model.classifier[2] = nn.Linear(
+            self.model.classifier[2].in_features, num_classes
+        )
 
         # 梯度检查点
         if use_gradient_checkpointing:
-            self.model.gradient_checkpointing_enable()
+            enable_checkpointing = getattr(
+                self.model, "gradient_checkpointing_enable", None
+            )
+            if enable_checkpointing is None:
+                warnings.warn(
+                    "Gradient checkpointing is not supported by the selected "
+                    "torchvision model; continuing without it.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            else:
+                enable_checkpointing()
 
         # torch.compile (在 setup 后应用)
         self._should_compile = compile_model
+        self._compiled = False
 
         self.lr = lr
         self.weight_decay = weight_decay
         self.use_fused_optimizer = use_fused_optimizer
 
-    def setup(self, stage=None):
+    def setup(self, stage=None) -> None:
         """在设备设置后应用优化"""
         # channels_last 内存格式
         if self.hparams.use_channels_last:
             self.model = self.model.to(memory_format=torch.channels_last)
 
         # torch.compile
-        if self._should_compile:
+        if self._should_compile and not self._compiled:
             self.model = torch.compile(self.model, backend="inductor", fullgraph=False)
+            self._compiled = True
 
     def forward(self, x):
         return self.model(x)

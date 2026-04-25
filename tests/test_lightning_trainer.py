@@ -1,0 +1,181 @@
+import json
+from pathlib import Path
+
+import pytest
+import pytorch_lightning as pl
+import torch
+from PIL import Image
+
+from lightning_trainer.data import TinyImageNetDataModule
+from lightning_trainer.model import ImageClassifier
+
+
+def make_imagefolder(root: Path, classes: list[str] | None = None) -> Path:
+    classes = classes or ["class_a", "class_b"]
+    for split in ["train", "val"]:
+        for class_index, class_name in enumerate(classes):
+            class_dir = root / split / class_name
+            class_dir.mkdir(parents=True, exist_ok=True)
+            for image_index in range(2):
+                image = Image.new(
+                    "RGB",
+                    (32, 32),
+                    color=(class_index * 80, image_index * 80, 128),
+                )
+                image.save(class_dir / f"{image_index}.jpg")
+    return root
+
+
+def test_datamodule_builds_loaders(tmp_path: Path) -> None:
+    data_dir = make_imagefolder(tmp_path / "data")
+    module = TinyImageNetDataModule(
+        data_dir=data_dir,
+        batch_size=2,
+        image_size=32,
+        num_workers=0,
+    )
+
+    module.setup("fit")
+    images, labels = next(iter(module.train_dataloader()))
+
+    assert module.num_classes == 2
+    assert images.shape == (2, 3, 32, 32)
+    assert labels.shape == (2,)
+
+
+def test_train_dataloader_drops_last_batch(tmp_path: Path) -> None:
+    data_dir = make_imagefolder(tmp_path / "data")
+    module = TinyImageNetDataModule(
+        data_dir=data_dir,
+        batch_size=3,
+        image_size=32,
+        num_workers=0,
+    )
+
+    module.setup("fit")
+
+    assert len(module.train_dataloader()) == 1
+    assert len(module.val_dataloader()) == 2
+
+
+def write_cache_split(
+    cache_dir: Path,
+    split: str,
+    classes: list[str],
+    image_size: int,
+    num_samples: int,
+) -> None:
+    split_dir = cache_dir / split
+    split_dir.mkdir(parents=True)
+    images = torch.randint(
+        0,
+        256,
+        (num_samples, 3, image_size, image_size),
+        dtype=torch.uint8,
+    )
+    labels = torch.arange(num_samples, dtype=torch.long) % len(classes)
+    (split_dir / "images.bin").write_bytes(images.numpy().tobytes())
+    torch.save(labels, split_dir / "labels.pt")
+    (split_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "format": "uint8_chw_bin_v1",
+                "split": split,
+                "num_samples": num_samples,
+                "image_size": image_size,
+                "classes": classes,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_datamodule_reads_tensor_cache(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    classes = ["class_a", "class_b"]
+    write_cache_split(cache_dir, "train", classes, image_size=32, num_samples=4)
+    write_cache_split(cache_dir, "val", classes, image_size=32, num_samples=4)
+    module = TinyImageNetDataModule(
+        data_dir=tmp_path / "unused",
+        cache_dir=cache_dir,
+        batch_size=2,
+        image_size=32,
+        num_workers=0,
+    )
+
+    module.setup("fit")
+    images, labels = next(iter(module.train_dataloader()))
+
+    assert module.num_classes == 2
+    assert images.shape == (2, 3, 32, 32)
+    assert labels.shape == (2,)
+
+
+def test_datamodule_rejects_mismatched_classes(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    make_imagefolder(data_dir)
+    extra_val_class = data_dir / "val" / "class_c"
+    extra_val_class.mkdir(parents=True)
+    Image.new("RGB", (32, 32)).save(extra_val_class / "0.jpg")
+
+    module = TinyImageNetDataModule(data_dir=data_dir, num_workers=0)
+
+    with pytest.raises(ValueError, match="类别目录不一致"):
+        module.setup("fit")
+
+
+def test_image_classifier_forward() -> None:
+    model = ImageClassifier(
+        num_classes=2,
+        pretrained=False,
+        compile_model=False,
+        use_channels_last=False,
+    )
+
+    output = model(torch.randn(2, 3, 32, 32))
+
+    assert output.shape == (2, 2)
+
+
+def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
+    with pytest.warns(UserWarning, match="not supported"):
+        ImageClassifier(
+            pretrained=False,
+            compile_model=False,
+            use_gradient_checkpointing=True,
+        )
+
+
+def test_lightning_cpu_smoke_train(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 0)
+    data_dir = make_imagefolder(tmp_path / "data")
+    module = TinyImageNetDataModule(
+        data_dir=data_dir,
+        batch_size=2,
+        image_size=32,
+        num_workers=0,
+    )
+    model = ImageClassifier(
+        num_classes=2,
+        pretrained=False,
+        compile_model=False,
+        use_channels_last=False,
+    )
+    trainer = pl.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_epochs=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+        default_root_dir=tmp_path,
+    )
+
+    trainer.fit(model, module)
+
+    assert trainer.state.finished

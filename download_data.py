@@ -8,7 +8,6 @@
 """
 
 import argparse
-import os
 import shutil
 import sys
 import zipfile
@@ -27,7 +26,6 @@ def download_from_stanford(data_dir: Path) -> bool:
         True 如果下载成功
     """
     import urllib.request
-    import tarfile
 
     url = "http://cs231n.stanford.edu/tiny-imagenet-200.zip"
     zip_path = data_dir / "tiny-imagenet-200.zip"
@@ -70,10 +68,39 @@ def download_from_stanford(data_dir: Path) -> bool:
         print(f"[错误] 解压失败: {e}")
         return False
 
+    if not _convert_stanford_val(extract_dir):
+        return False
+
     # 清理
     zip_path.unlink()
     print(f"[清理] 已删除 {zip_path}")
 
+    return True
+
+
+def _convert_stanford_val(dataset_dir: Path) -> bool:
+    """将 Stanford 官方验证集整理成 ImageFolder 目录结构。"""
+    val_dir = dataset_dir / "val"
+    annotations_path = val_dir / "val_annotations.txt"
+    images_dir = val_dir / "images"
+    if not annotations_path.exists() or not images_dir.exists():
+        return True
+
+    try:
+        for line in annotations_path.read_text().splitlines():
+            image_name, class_name, *_ = line.split("\t")
+            src = images_dir / image_name
+            if not src.exists():
+                continue
+            dst_dir = val_dir / class_name
+            dst_dir.mkdir(exist_ok=True)
+            shutil.move(str(src), dst_dir / image_name)
+        shutil.rmtree(images_dir)
+    except Exception as e:
+        print(f"[错误] 验证集格式转换失败: {e}")
+        return False
+
+    print("[完成] 验证集已转换为 ImageFolder 格式")
     return True
 
 
@@ -141,7 +168,11 @@ def download_from_huggingface(data_dir: Path) -> bool:
     return True
 
 
-def create_tiny_subset(data_dir: Path, num_classes: int = 10, images_per_class: int = 20) -> bool:
+def create_tiny_subset(
+    data_dir: Path,
+    num_classes: int = 10,
+    images_per_class: int = 20,
+) -> bool:
     """从完整数据集创建小型测试子集。
 
     Args:
@@ -176,7 +207,10 @@ def create_tiny_subset(data_dir: Path, num_classes: int = 10, images_per_class: 
 
         # 选择类别
         all_classes = sorted([d for d in src_split.iterdir() if d.is_dir()])
-        selected_classes = random.sample(all_classes, min(num_classes, len(all_classes)))
+        selected_classes = random.sample(
+            all_classes,
+            min(num_classes, len(all_classes)),
+        )
 
         for class_dir in selected_classes:
             src_class = src_split / class_dir.name

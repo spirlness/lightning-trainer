@@ -12,7 +12,7 @@ dependencies = [
   "torch",
   "torchvision",
   "pillow>=10.0",
-  "triton-windows==3.6.0.post26",
+  "triton-windows==3.6.0.post26; sys_platform == 'win32'",
   "pytorch-lightning>=2.0",
 ]
 
@@ -50,3 +50,14 @@ ignore = []
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+  "ignore:GPU available but not used.*:UserWarning",
+  "ignore:.*treespec.*LeafSpec.*deprecated.*:DeprecationWarning",
+  "ignore:.*treespec.*LeafSpec.*deprecated.*:FutureWarning",
+  "ignore:.*pin_memory.*no accelerator.*:UserWarning",
+  "ignore:The 'val_dataloader' does not have many workers:UserWarning",
+  "ignore:The 'train_dataloader' does not have many workers:UserWarning",
+]

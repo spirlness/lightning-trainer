@@ -1,8 +1,10 @@
 __pycache__/
 *.py[cod]
+.coverage
 *.pt
 *.pth
 .pytest_cache/
+.ruff_cache/
 .vscode/
 data/
 logs/
