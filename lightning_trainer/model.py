@@ -84,12 +84,22 @@ class ImageClassifier(LightningModule):
     def forward(self, x):
         return self.model(x)
 
-    def training_step(self, batch, batch_idx):
+    def on_after_batch_transfer(self, batch, dataloader_idx):
         images, labels = batch
+
+        # We need to perform the division and normalization here.
+        # Batched conversion to float, division by 255, and normalization on GPU
+
         if self.hparams.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
+
         images = images.to(self.dtype) / 255.0
         images = (images - self.mean) / self.std
+
+        return images, labels
+
+    def training_step(self, batch, batch_idx):
+        images, labels = batch
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
@@ -99,10 +109,6 @@ class ImageClassifier(LightningModule):
 
     def validation_step(self, batch, batch_idx):
         images, labels = batch
-        if self.hparams.use_channels_last:
-            images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype) / 255.0
-        images = (images - self.mean) / self.std
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
@@ -111,10 +117,6 @@ class ImageClassifier(LightningModule):
 
     def test_step(self, batch, batch_idx):
         images, labels = batch
-        if self.hparams.use_channels_last:
-            images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype) / 255.0
-        images = (images - self.mean) / self.std
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
