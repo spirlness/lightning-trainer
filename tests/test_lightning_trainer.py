@@ -179,3 +179,47 @@ def test_lightning_cpu_smoke_train(
     trainer.fit(model, module)
 
     assert trainer.state.finished
+
+
+def test_configure_optimizers_with_fused_adamw(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    model = ImageClassifier(
+        num_classes=2,
+        pretrained=False,
+        compile_model=False,
+        use_fused_optimizer=True,
+    )
+
+    config = model.configure_optimizers()
+    optimizer = config["optimizer"]
+    scheduler_dict = config["lr_scheduler"]
+
+    assert isinstance(optimizer, torch.optim.AdamW)
+    assert optimizer.defaults.get("fused") is True
+    assert isinstance(
+        scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
+    )
+
+
+def test_configure_optimizers_without_fused_adamw(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    model = ImageClassifier(
+        num_classes=2,
+        pretrained=False,
+        compile_model=False,
+        use_fused_optimizer=True,
+    )
+
+    config = model.configure_optimizers()
+    optimizer = config["optimizer"]
+    scheduler_dict = config["lr_scheduler"]
+
+    assert isinstance(optimizer, torch.optim.AdamW)
+    assert optimizer.defaults.get("fused") is not True
+    assert isinstance(
+        scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
+    )
