@@ -88,8 +88,8 @@ class ImageClassifier(LightningModule):
         images, labels = batch
         if self.hparams.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype) / 255.0
-        images = (images - self.mean) / self.std
+        images = images.to(self.dtype, copy=False)
+        images.div_(255.0).sub_(self.mean).div_(self.std)
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
@@ -101,8 +101,8 @@ class ImageClassifier(LightningModule):
         images, labels = batch
         if self.hparams.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype) / 255.0
-        images = (images - self.mean) / self.std
+        images = images.to(self.dtype, copy=False)
+        images.div_(255.0).sub_(self.mean).div_(self.std)
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
@@ -113,8 +113,8 @@ class ImageClassifier(LightningModule):
         images, labels = batch
         if self.hparams.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype) / 255.0
-        images = (images - self.mean) / self.std
+        images = images.to(self.dtype, copy=False)
+        images.div_(255.0).sub_(self.mean).div_(self.std)
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
