@@ -34,6 +34,11 @@ class ImageClassifier(LightningModule):
         super().__init__()
         if config is None:
             config = ImageClassifierConfig(**kwargs)
+        elif kwargs:
+            raise ValueError(
+                f"Cannot provide both a `config` object and additional keyword arguments: {list(kwargs.keys())}. "
+                "Please either pass only kwargs or update the config object before passing it."
+            )
         self.config = config
         self.save_hyperparameters(asdict(config))
 
@@ -78,7 +83,7 @@ class ImageClassifier(LightningModule):
     def setup(self, stage=None) -> None:
         """在设备设置后应用优化"""
         # channels_last 内存格式
-        if self.hparams.use_channels_last:
+        if self.config.use_channels_last:
             self.model = self.model.to(memory_format=torch.channels_last)
 
         # torch.compile
@@ -100,7 +105,7 @@ class ImageClassifier(LightningModule):
         # We need to perform the division and normalization here.
         # Batched conversion to float, division by 255, and normalization on GPU
 
-        if self.hparams.use_channels_last:
+        if self.config.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
         images = images.to(self.dtype)
         images.div_(255.0)
