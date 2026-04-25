@@ -68,19 +68,12 @@ class TinyImageNetDataModule(LightningDataModule):
         self.image_size = image_size
         self.num_classes: int = 0  # 在 setup 中初始化
 
-        # ImageNet 标准归一化
-        self.normalize = transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225],
-        )
-
         # 训练数据增强
         self.train_transform = transforms.Compose(
             [
                 transforms.Resize((image_size, image_size)),
                 transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                self.normalize,
+                transforms.PILToTensor(),
             ]
         )
 
@@ -89,8 +82,7 @@ class TinyImageNetDataModule(LightningDataModule):
             [
                 transforms.Resize(image_size + 32),
                 transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                self.normalize,
+                transforms.PILToTensor(),
             ]
         )
 
@@ -125,8 +117,16 @@ class TinyImageNetDataModule(LightningDataModule):
         train_dir = self.cache_dir / "train"
         val_dir = self.cache_dir / "val"
         test_dir = self.cache_dir / "test"
-        self.train_dataset = CachedTensorDataset(train_dir, self.normalize)
-        self.val_dataset = CachedTensorDataset(val_dir, self.normalize)
+
+        train_transform = transforms.Compose(
+            [
+                transforms.RandomHorizontalFlip(),
+            ]
+        )
+        val_transform = None
+
+        self.train_dataset = CachedTensorDataset(train_dir, train_transform)
+        self.val_dataset = CachedTensorDataset(val_dir, val_transform)
         if self.train_dataset.classes != self.val_dataset.classes:
             raise ValueError("训练缓存和验证缓存类别不一致")
         if self.train_dataset.image_size != self.image_size:
@@ -138,7 +138,7 @@ class TinyImageNetDataModule(LightningDataModule):
 
         self.test_dataset = None
         if test_dir.exists():
-            self.test_dataset = CachedTensorDataset(test_dir, self.normalize)
+            self.test_dataset = CachedTensorDataset(test_dir, val_transform)
             if self.test_dataset.classes != self.train_dataset.classes:
                 raise ValueError("测试缓存和训练缓存类别不一致")
 
@@ -165,6 +165,7 @@ class TinyImageNetDataModule(LightningDataModule):
             shuffle=shuffle,
             drop_last=drop_last,
             num_workers=self.num_workers,
+            prefetch_factor=4 if self.num_workers > 0 else None,
             pin_memory=torch.cuda.is_available(),
             persistent_workers=self.num_workers > 0,
             multiprocessing_context="spawn" if self.num_workers > 0 else None,

@@ -16,6 +16,7 @@ from pathlib import Path
 # Windows 需要特殊处理 SSL
 if sys.platform == "win32":
     import ssl
+
     ssl._create_default_https_context = ssl._create_unverified_context
 
 
@@ -61,7 +62,7 @@ def download_from_stanford(data_dir: Path) -> bool:
     # 解压
     print(f"\n[解压] {zip_path}")
     try:
-        with zipfile.ZipFile(zip_path, 'r') as zf:
+        with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(data_dir)
         print("[完成] 解压完成")
     except Exception as e:
@@ -235,8 +236,8 @@ def _download_progress(count: int, block_size: int, total_size: int) -> None:
     percent = min(100, int(count * block_size * 100 / total_size))
     bar_len = 40
     filled = int(bar_len * percent / 100)
-    bar = '=' * filled + '-' * (bar_len - filled)
-    print(f'\r  [{bar}] {percent}% ({count * block_size / 1024 / 1024:.1f}MB)', end='')
+    bar = "=" * filled + "-" * (bar_len - filled)
+    print(f"\r  [{bar}] {percent}% ({count * block_size / 1024 / 1024:.1f}MB)", end="")
 
 
 def print_manual_instructions() -> None:

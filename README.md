@@ -13,9 +13,9 @@ lightning_trainer/
 scripts/
   prepare_tensor_cache.py          # JPEG ImageFolder -> uint8 tensor cache
   benchmark_lightning_throughput.py # GPU throughput benchmark
+  download_data.py                 # Dataset download script
 tests/
   test_lightning_trainer.py
-download_data.py
 ```
 
 The old `tiny_imagenet_trainer` package and old benchmark scripts are no longer
@@ -31,10 +31,10 @@ uv sync
 
 ```bash
 # Download/convert Tiny-ImageNet through Hugging Face
-python download_data.py --method huggingface
+uv run --extra dev python scripts/download_data.py --method huggingface
 
 # Or create a small local subset from an existing full dataset
-python download_data.py --method subset --num-classes 10 --images-per-class 100
+uv run --extra dev python scripts/download_data.py --method subset --num-classes 10 --images-per-class 100
 ```
 
 Expected ImageFolder layout:

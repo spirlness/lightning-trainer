@@ -58,6 +58,13 @@ class ImageClassifier(LightningModule):
         self.max_epochs = max_epochs
         self.use_fused_optimizer = use_fused_optimizer
 
+        self.register_buffer(
+            "mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        )
+        self.register_buffer(
+            "std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+        )
+
     def setup(self, stage=None) -> None:
         """在设备设置后应用优化"""
         # channels_last 内存格式
@@ -66,7 +73,12 @@ class ImageClassifier(LightningModule):
 
         # torch.compile
         if self._should_compile and not self._compiled:
-            self.model = torch.compile(self.model, backend="inductor", fullgraph=False)
+            self.model = torch.compile(
+                self.model,
+                backend="inductor",
+                fullgraph=True,
+                mode="max-autotune",
+            )
             self._compiled = True
 
     def forward(self, x):
@@ -76,6 +88,8 @@ class ImageClassifier(LightningModule):
         images, labels = batch
         if self.hparams.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
+        images = images.to(self.dtype) / 255.0
+        images = (images - self.mean) / self.std
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
@@ -87,6 +101,8 @@ class ImageClassifier(LightningModule):
         images, labels = batch
         if self.hparams.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
+        images = images.to(self.dtype) / 255.0
+        images = (images - self.mean) / self.std
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
@@ -97,6 +113,8 @@ class ImageClassifier(LightningModule):
         images, labels = batch
         if self.hparams.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
+        images = images.to(self.dtype) / 255.0
+        images = (images - self.mean) / self.std
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()

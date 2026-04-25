@@ -44,7 +44,10 @@ def setup_msvc() -> None:
             if os.path.isdir(os.path.join(msvc_base, d))
         ]
         if versions:
-            msvc_version = sorted(versions)[-1]
+            msvc_version = sorted(
+                versions,
+                key=lambda v: [int(x) if x.isdigit() else x for x in v.split(".")],
+            )[-1]
     if not msvc_version:
         print("[Warning] 无法检测 MSVC 版本，torch.compile 可能失败")
         return
@@ -92,6 +95,7 @@ def setup_msvc() -> None:
 
 
 def main() -> None:
+    torch.set_float32_matmul_precision("high")
     parser = argparse.ArgumentParser(
         description="Tiny-ImageNet 训练",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -113,6 +117,12 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=128, help="批次大小")
     parser.add_argument("--max-epochs", type=int, default=10, help="训练 epoch 数")
     parser.add_argument("--no-compile", action="store_true", help="禁用 torch.compile")
+    parser.add_argument(
+        "--pretrained",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="使用预训练权重",
+    )
 
     args = parser.parse_args()
 
@@ -137,7 +147,7 @@ def main() -> None:
         max_epochs=args.max_epochs,
         compile_model=compile_model,
         use_fused_optimizer=True,
-        pretrained=False,
+        pretrained=args.pretrained,
     )
 
     logger = CSVLogger("outputs", name="lightning_trainer")
