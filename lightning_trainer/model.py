@@ -86,6 +86,10 @@ class ImageClassifier(LightningModule):
 
     def _shared_step(self, batch, prefix: str):
         images, labels = batch
+
+        # We need to perform the division and normalization here.
+        # Batched conversion to float, division by 255, and normalization on GPU
+
         if self.hparams.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
         images = images.to(self.dtype)
