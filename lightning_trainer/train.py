@@ -6,7 +6,8 @@ import sys
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger
 
 from lightning_trainer.data import TinyImageNetDataModule
 from lightning_trainer.model import ImageClassifier
@@ -91,81 +92,75 @@ def setup_msvc() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Tiny-ImageNet 训练")
+    parser = argparse.ArgumentParser(
+        description="Tiny-ImageNet 训练",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
 
     # 数据参数
-    parser.add_argument("--data-dir", type=str, default="data/tiny-imagenet-200")
-    parser.add_argument("--cache-dir", type=str, default=None)
-    parser.add_argument("--batch-size", type=int, default=128)
-    parser.add_argument("--num-workers", type=int, default=2)
-    parser.add_argument("--image-size", type=int, default=224)
-
-    # 模型参数
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--max-epochs", type=int, default=10)
-
-    # 优化开关
-    parser.add_argument("--compile", action="store_true", help="启用 torch.compile")
     parser.add_argument(
-        "--gradient-checkpointing",
-        action="store_true",
-        help="启用模型支持时的梯度检查点",
+        "--data-dir",
+        type=str,
+        default="data/tiny_imagenet_local",
+        help="ImageFolder 数据目录",
     )
-    parser.add_argument("--fused-optimizer", action="store_true", help="启用融合优化器")
-    parser.add_argument("--no-pretrained", action="store_true", help="不使用预训练权重")
-    parser.add_argument("--test", action="store_true", help="训练后运行测试集")
+    parser.add_argument(
+        "--cache-dir",
+        type=str,
+        default="data/tiny_imagenet_cache_128",
+        help="tensor 缓存目录；传空字符串可禁用缓存",
+    )
+    parser.add_argument("--batch-size", type=int, default=128, help="批次大小")
+    parser.add_argument("--max-epochs", type=int, default=10, help="训练 epoch 数")
+    parser.add_argument("--no-compile", action="store_true", help="禁用 torch.compile")
 
     args = parser.parse_args()
 
-    # 设置 MSVC
-    if args.compile:
+    compile_model = not args.no_compile
+    if compile_model:
         setup_msvc()
 
-    # 数据模块
     data_module = TinyImageNetDataModule(
         data_dir=args.data_dir,
-        cache_dir=args.cache_dir,
+        cache_dir=args.cache_dir or None,
         batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        image_size=args.image_size,
+        num_workers=4,
+        image_size=128,
     )
-    # 预先 setup 获取类别数（Trainer.fit 时会再次调用，但 Lightning 会处理）
     data_module.prepare_data()
     data_module.setup("fit")
     num_classes = data_module.num_classes
 
-    # 模型
     model = ImageClassifier(
         num_classes=num_classes,
-        lr=args.lr,
-        compile_model=args.compile,
-        use_gradient_checkpointing=args.gradient_checkpointing,
-        use_fused_optimizer=args.fused_optimizer,
-        pretrained=not args.no_pretrained,
+        lr=1e-4,
+        max_epochs=args.max_epochs,
+        compile_model=compile_model,
+        use_fused_optimizer=True,
+        pretrained=False,
     )
 
-    # 训练器
+    logger = CSVLogger("outputs", name="lightning_trainer")
+    callbacks = [
+        LearningRateMonitor(logging_interval="epoch"),
+        ModelCheckpoint(
+            monitor="val_acc",
+            mode="max",
+            filename="best-{epoch:02d}-{val_acc:.4f}",
+            save_last=True,
+            save_top_k=1,
+        ),
+    ]
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         accelerator="auto",
         precision="16-mixed" if torch.cuda.is_available() else "32",
-        callbacks=[
-            ModelCheckpoint(
-                monitor="val_acc",
-                mode="max",
-                filename="best-{epoch:02d}-{val_acc:.2f}",
-            ),
-        ],
+        default_root_dir="outputs",
+        logger=logger,
+        callbacks=callbacks,
     )
 
     trainer.fit(model, data_module)
-
-    # 测试集评估
-    if args.test and data_module.test_dataloader() is not None:
-        print("\n" + "=" * 50)
-        print("测试集评估")
-        print("=" * 50)
-        trainer.test(model, data_module, ckpt_path="best")
 
 
 if __name__ == "__main__":

@@ -62,6 +62,14 @@ uv run --extra dev python scripts/prepare_tensor_cache.py \
 The cache stores fixed resized CHW uint8 images in `images.bin`, plus
 `labels.pt` and `manifest.json` for each split.
 
+For the current local Tiny-ImageNet cache at `image_size=128`, the generated
+files are approximately:
+
+```text
+train/images.bin  4.92 GB
+val/images.bin    0.49 GB
+```
+
 ## Train
 
 Basic ImageFolder training:
@@ -69,30 +77,26 @@ Basic ImageFolder training:
 ```bash
 python -m lightning_trainer.train \
   --data-dir data/tiny-imagenet-200 \
+  --cache-dir "" \
   --batch-size 128 \
-  --image-size 128 \
-  --num-workers 4 \
-  --compile \
-  --fused-optimizer
+  --max-epochs 10
 ```
 
 Cached-data training:
 
 ```bash
-python -m lightning_trainer.train \
-  --data-dir data/tiny_imagenet_local \
-  --cache-dir data/tiny_imagenet_cache_128 \
-  --batch-size 128 \
-  --image-size 128 \
-  --num-workers 4 \
-  --compile \
-  --fused-optimizer \
-  --no-pretrained
+python -m lightning_trainer.train
 ```
+
+The default training configuration uses the current recommended local setup:
+`data/tiny_imagenet_local`, `data/tiny_imagenet_cache_128`, `batch_size=128`,
+`image_size=128`, `num_workers=4`, `torch.compile`, fused AdamW, AMP,
+`channels_last`, CSV logging, checkpointing, LR monitoring, and cosine LR
+scheduling.
 
 ## Benchmark
 
-Best current benchmark command on this machine:
+Best current full-epoch benchmark command on this machine:
 
 ```bash
 uv run --extra dev python scripts/benchmark_lightning_throughput.py \
@@ -105,13 +109,31 @@ uv run --extra dev python scripts/benchmark_lightning_throughput.py \
   --no-pretrained
 ```
 
-Recent full-epoch result with tensor cache:
+Measured environment:
 
 ```text
-batch_size=128, num_workers=4
-throughput ~= 1082 samples/s
-peak memory ~= 2.8 GB
-elapsed ~= 142 s
+GPU: NVIDIA GeForce RTX 3060 Laptop GPU
+PyTorch: 2.11.0+cu128
+Dataset: 200 classes, 100000 train images, 10000 val images
+Input: tensor cache, image_size=128, precision=16-mixed
+Optimizations: torch.compile, channels_last, fused AdamW, drop_last=True
+```
+
+Recent benchmark results:
+
+| batch size | workers | step throughput | epoch elapsed | peak memory | note |
+|---:|---:|---:|---:|---:|---|
+| 128 | 4 | 1082.89 samples/s | 141.53 s | 2807.3 MB | Recommended |
+| 192 | 4 | 1085.36 samples/s | 143.89 s | 3998.2 MB | Similar speed, higher memory |
+| 256 | 8 | 1028.74 samples/s | short-window only | 5167.8 MB | Not recommended |
+
+Recommended default for this machine:
+
+```text
+batch_size=128
+num_workers=4
+image_size=128
+cache_dir=data/tiny_imagenet_cache_128
 ```
 
 ## Design Notes
@@ -122,6 +144,12 @@ elapsed ~= 142 s
 - Train DataLoader uses `drop_last=True` to avoid dynamic final-batch shapes
   with `torch.compile`.
 - AMP, `channels_last`, fused AdamW, and `torch.compile` are supported.
+- The training CLI intentionally exposes only business parameters:
+  `data_dir/cache_dir/batch_size/max_epochs/no_compile`.
+- Lightning handles CSV logging, checkpointing, LR monitoring, precision,
+  device placement, optimizer stepping, and scheduler stepping.
+- The training CLI enables `torch.compile` and fused AdamW by default. Use
+  `--no-compile` to disable compile for fallback runs.
 - `--gradient-checkpointing` only has an effect for models exposing a native
   `gradient_checkpointing_enable` method. Current torchvision ConvNeXt-Tiny
   does not, so the flag warns and continues.

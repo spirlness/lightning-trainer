@@ -116,6 +116,7 @@ def main() -> None:
     model = ImageClassifier(
         num_classes=data_module.num_classes,
         lr=args.lr,
+        max_epochs=1,
         compile_model=compile_model,
         use_fused_optimizer=not args.no_fused_optimizer,
         use_channels_last=True,

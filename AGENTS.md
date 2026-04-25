@@ -17,10 +17,10 @@ Useful CPU smoke command:
 ```bash
 python -m lightning_trainer.train \
   --data-dir data/tiny_imagenet_local \
+  --cache-dir "" \
   --max-epochs 0 \
-  --num-workers 0 \
   --batch-size 2 \
-  --no-pretrained
+  --no-compile \
 ```
 
 Best current GPU benchmark command on this machine:
@@ -35,6 +35,19 @@ uv run --extra dev python scripts/benchmark_lightning_throughput.py \
   --full-epoch \
   --no-pretrained
 ```
+
+Current measured recommendation on the RTX 3060 Laptop GPU:
+
+- `batch_size=128`
+- `num_workers=4`
+- `image_size=128`
+- `cache_dir=data/tiny_imagenet_cache_128`
+- Full-epoch tensor-cache benchmark: about `1082 samples/s`, `142 s`,
+  `2.8 GB` peak memory.
+
+`batch_size=192, num_workers=4` has similar throughput but uses about `4.0 GB`
+peak memory and was slightly slower end-to-end, so keep `128x4` as the default
+recommendation.
 
 ## Project Shape
 
@@ -56,6 +69,13 @@ uv run --extra dev python scripts/benchmark_lightning_throughput.py \
   with `torch.compile`.
 - Tensor cache uses fixed resized CHW uint8 tensors and trades disk space for
   faster input throughput.
+- Training CLI defaults to the recommended local tensor-cache setup:
+  `data/tiny_imagenet_local`, `data/tiny_imagenet_cache_128`, `batch_size=128`,
+  `image_size=128`, `num_workers=4`, `torch.compile`, and fused AdamW.
+- Training CLI should stay small and expose only business parameters:
+  `data_dir/cache_dir/batch_size/max_epochs/no_compile`.
+- Lightning owns CSV logging, checkpointing, LR monitoring, precision,
+  optimizer stepping, and scheduler stepping.
 - `--gradient-checkpointing` only takes effect for models exposing
   `gradient_checkpointing_enable`; current torchvision ConvNeXt-Tiny does not,
   so the flag warns and continues.

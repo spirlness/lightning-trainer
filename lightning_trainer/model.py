@@ -17,6 +17,7 @@ class ImageClassifier(LightningModule):
         num_classes: int = 200,
         lr: float = 1e-4,
         weight_decay: float = 1e-4,
+        max_epochs: int = 10,
         compile_model: bool = True,
         use_gradient_checkpointing: bool = False,
         use_fused_optimizer: bool = True,
@@ -54,6 +55,7 @@ class ImageClassifier(LightningModule):
 
         self.lr = lr
         self.weight_decay = weight_decay
+        self.max_epochs = max_epochs
         self.use_fused_optimizer = use_fused_optimizer
 
     def setup(self, stage=None) -> None:
@@ -115,4 +117,14 @@ class ImageClassifier(LightningModule):
                 lr=self.lr,
                 weight_decay=self.weight_decay,
             )
-        return optimizer
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.max_epochs,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+            },
+        }
