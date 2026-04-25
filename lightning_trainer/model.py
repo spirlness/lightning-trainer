@@ -36,8 +36,9 @@ class ImageClassifier(LightningModule):
             config = ImageClassifierConfig(**kwargs)
         elif kwargs:
             raise ValueError(
-                f"Cannot provide both a `config` object and additional keyword arguments: {list(kwargs.keys())}. "
-                "Please either pass only kwargs or update the config object before passing it."
+                "Cannot provide both a `config` object and additional keyword "
+                f"arguments: {list(kwargs.keys())}. Please either pass only "
+                "kwargs or update the config object before passing it."
             )
         self.config = config
         self.save_hyperparameters(asdict(config))
