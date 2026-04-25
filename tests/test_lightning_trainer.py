@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 
 from lightning_trainer.data import TinyImageNetDataModule
-from lightning_trainer.model import ImageClassifier
+from lightning_trainer.model import ImageClassifier, ImageClassifierConfig
 
 
 def make_imagefolder(root: Path, classes: list[str] | None = None) -> Path:
@@ -126,10 +126,12 @@ def test_datamodule_rejects_mismatched_classes(tmp_path: Path) -> None:
 
 def test_image_classifier_forward() -> None:
     model = ImageClassifier(
-        num_classes=2,
-        pretrained=False,
-        compile_model=False,
-        use_channels_last=False,
+        ImageClassifierConfig(
+            num_classes=2,
+            pretrained=False,
+            compile_model=False,
+            use_channels_last=False,
+        )
     )
 
     output = model(torch.randn(2, 3, 32, 32))
@@ -140,9 +142,11 @@ def test_image_classifier_forward() -> None:
 def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
     with pytest.warns(UserWarning, match="not supported"):
         ImageClassifier(
-            pretrained=False,
-            compile_model=False,
-            use_gradient_checkpointing=True,
+            ImageClassifierConfig(
+                pretrained=False,
+                compile_model=False,
+                use_gradient_checkpointing=True,
+            )
         )
 
 
@@ -160,10 +164,12 @@ def test_lightning_cpu_smoke_train(
         num_workers=0,
     )
     model = ImageClassifier(
-        num_classes=2,
-        pretrained=False,
-        compile_model=False,
-        use_channels_last=False,
+        ImageClassifierConfig(
+            num_classes=2,
+            pretrained=False,
+            compile_model=False,
+            use_channels_last=False,
+        )
     )
     trainer = pl.Trainer(
         accelerator="cpu",
@@ -186,10 +192,12 @@ def test_configure_optimizers_with_fused_adamw(
 ) -> None:
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     model = ImageClassifier(
-        num_classes=2,
-        pretrained=False,
-        compile_model=False,
-        use_fused_optimizer=True,
+        ImageClassifierConfig(
+            num_classes=2,
+            pretrained=False,
+            compile_model=False,
+            use_fused_optimizer=True,
+        )
     )
 
     config = model.configure_optimizers()
@@ -208,10 +216,12 @@ def test_configure_optimizers_without_fused_adamw(
 ) -> None:
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     model = ImageClassifier(
-        num_classes=2,
-        pretrained=False,
-        compile_model=False,
-        use_fused_optimizer=True,
+        ImageClassifierConfig(
+            num_classes=2,
+            pretrained=False,
+            compile_model=False,
+            use_fused_optimizer=True,
+        )
     )
 
     config = model.configure_optimizers()
@@ -223,3 +233,28 @@ def test_configure_optimizers_without_fused_adamw(
     assert isinstance(
         scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
     )
+
+
+def test_checkpointing(tmp_path: Path) -> None:
+    model = ImageClassifier(
+        ImageClassifierConfig(
+            num_classes=2,
+            pretrained=False,
+            compile_model=False,
+            use_channels_last=False,
+        )
+    )
+    trainer = pl.Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_epochs=1,
+        logger=False,
+        enable_checkpointing=True,
+        default_root_dir=tmp_path,
+    )
+    # create a fake batch to save checkpoint without training
+    trainer.strategy.connect(model)
+    trainer.save_checkpoint(tmp_path / "checkpoint.ckpt")
+
+    loaded_model = ImageClassifier.load_from_checkpoint(tmp_path / "checkpoint.ckpt")
+    assert loaded_model.config.num_classes == 2

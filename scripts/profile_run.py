@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.profilers import PyTorchProfiler
 
 from lightning_trainer.data import TinyImageNetDataModule
-from lightning_trainer.model import ImageClassifier
+from lightning_trainer.model import ImageClassifier, ImageClassifierConfig
 from lightning_trainer.train import setup_msvc
 
 
@@ -19,12 +19,14 @@ def main():
     )
 
     model = ImageClassifier(
-        num_classes=200,
-        lr=1e-4,
-        max_epochs=1,
-        compile_model=True,
-        use_fused_optimizer=True,
-        pretrained=False,
+        ImageClassifierConfig(
+            num_classes=200,
+            lr=1e-4,
+            max_epochs=1,
+            compile_model=True,
+            use_fused_optimizer=True,
+            pretrained=False,
+        )
     )
 
     # Use PyTorchProfiler for deep performance analysis

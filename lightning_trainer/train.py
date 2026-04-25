@@ -10,7 +10,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger
 
 from lightning_trainer.data import TinyImageNetDataModule
-from lightning_trainer.model import ImageClassifier
+from lightning_trainer.model import ImageClassifier, ImageClassifierConfig
 
 
 def setup_msvc() -> None:
@@ -142,12 +142,14 @@ def main() -> None:
     num_classes = data_module.num_classes
 
     model = ImageClassifier(
-        num_classes=num_classes,
-        lr=1e-4,
-        max_epochs=args.max_epochs,
-        compile_model=compile_model,
-        use_fused_optimizer=True,
-        pretrained=args.pretrained,
+        ImageClassifierConfig(
+            num_classes=num_classes,
+            lr=1e-4,
+            max_epochs=args.max_epochs,
+            compile_model=compile_model,
+            use_fused_optimizer=True,
+            pretrained=args.pretrained,
+        )
     )
 
     logger = CSVLogger("outputs", name="lightning_trainer")
