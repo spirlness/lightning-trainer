@@ -10,6 +10,7 @@
 import argparse
 import shutil
 import sys
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -26,7 +27,6 @@ def download_from_stanford(data_dir: Path) -> bool:
     Returns:
         True 如果下载成功
     """
-    import urllib.request
 
     url = "http://cs231n.stanford.edu/tiny-imagenet-200.zip"
     zip_path = data_dir / "tiny-imagenet-200.zip"

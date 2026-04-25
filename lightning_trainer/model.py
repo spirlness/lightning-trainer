@@ -84,7 +84,7 @@ class ImageClassifier(LightningModule):
     def forward(self, x):
         return self.model(x)
 
-    def training_step(self, batch, batch_idx):
+    def _shared_step(self, batch, prefix: str):
         images, labels = batch
         if self.hparams.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
@@ -94,35 +94,18 @@ class ImageClassifier(LightningModule):
         logits = self(images)
         loss = F.cross_entropy(logits, labels)
         acc = (logits.argmax(dim=1) == labels).float().mean()
-        self.log("train_loss", loss, prog_bar=True)
-        self.log("train_acc", acc, prog_bar=True)
+        self.log(f"{prefix}_loss", loss, prog_bar=True)
+        self.log(f"{prefix}_acc", acc, prog_bar=True)
         return loss
 
+    def training_step(self, batch, batch_idx):
+        return self._shared_step(batch, "train")
+
     def validation_step(self, batch, batch_idx):
-        images, labels = batch
-        if self.hparams.use_channels_last:
-            images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype)
-        images.div_(255.0)
-        images.sub_(self.mean).div_(self.std)
-        logits = self(images)
-        loss = F.cross_entropy(logits, labels)
-        acc = (logits.argmax(dim=1) == labels).float().mean()
-        self.log("val_loss", loss, prog_bar=True)
-        self.log("val_acc", acc, prog_bar=True)
+        self._shared_step(batch, "val")
 
     def test_step(self, batch, batch_idx):
-        images, labels = batch
-        if self.hparams.use_channels_last:
-            images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype)
-        images.div_(255.0)
-        images.sub_(self.mean).div_(self.std)
-        logits = self(images)
-        loss = F.cross_entropy(logits, labels)
-        acc = (logits.argmax(dim=1) == labels).float().mean()
-        self.log("test_loss", loss, prog_bar=True)
-        self.log("test_acc", acc, prog_bar=True)
+        self._shared_step(batch, "test")
 
     def configure_optimizers(self):
         if self.use_fused_optimizer and torch.cuda.is_available():
