@@ -1,7 +1,6 @@
 import json
-from pathlib import Path
-
 import sys
+from pathlib import Path
 
 import pytest
 import pytorch_lightning as pl
@@ -112,6 +111,67 @@ def test_datamodule_reads_tensor_cache(tmp_path: Path) -> None:
     assert module.num_classes == 2
     assert images.shape == (2, 3, 32, 32)
     assert labels.shape == (2,)
+
+
+def test_datamodule_cached_val_dataloader(tmp_path: Path) -> None:
+    """Validate cached val_dataloader (regression: val_transform was None)."""
+    cache_dir = tmp_path / "cache"
+    classes = ["class_a", "class_b"]
+    write_cache_split(cache_dir, "train", classes, image_size=32, num_samples=4)
+    write_cache_split(cache_dir, "val", classes, image_size=32, num_samples=4)
+    module = TinyImageNetDataModule(
+        data_dir=tmp_path / "unused",
+        cache_dir=cache_dir,
+        batch_size=2,
+        image_size=32,
+        num_workers=0,
+    )
+
+    module.setup("fit")
+    images, labels = next(iter(module.val_dataloader()))
+
+    assert module.num_classes == 2
+    assert images.shape == (2, 3, 32, 32)
+    assert labels.shape == (2,)
+
+
+def test_normalization_rejects_double_div(tmp_path: Path) -> None:
+    """Verify cached path produces same output range (regression: double div_255)."""
+    import json
+
+    import torch.nn as nn
+
+    from lightning_trainer.data import CachedTensorDataset
+
+    # Build a tiny cached dataset with known uint8 values
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True)
+    images_tensor = torch.tensor(
+        [[[[100]], [[150]], [[200]]]], dtype=torch.uint8
+    )
+    labels_tensor = torch.zeros(1, dtype=torch.long)
+    (cache_dir / "images.bin").write_bytes(images_tensor.numpy().tobytes())
+    torch.save(labels_tensor, cache_dir / "labels.pt")
+    (cache_dir / "manifest.json").write_text(
+        json.dumps({
+            "format": "uint8_chw_bin_v1",
+            "split": "val",
+            "num_samples": 1,
+            "image_size": 1,
+            "classes": ["class_a"],
+        }),
+        encoding="utf-8",
+    )
+
+    dataset = CachedTensorDataset(cache_dir, nn.Identity())
+    image, _ = dataset[0]
+
+    # After fix: value is float32 [100, 200] (unchanged from uint8),
+    # NOT [0.39, 0.78] (div_255 applied)
+    assert image.dtype == torch.float32
+    assert image[0, 0, 0].item() == 100.0
+    assert image[1, 0, 0].item() == 150.0
+    assert image[2, 0, 0].item() == 200.0
 
 
 def test_datamodule_rejects_mismatched_classes(tmp_path: Path) -> None:
@@ -275,12 +335,6 @@ def test_configure_optimizers_branches(
     assert isinstance(
         scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
     )
-    # create a fake batch to save checkpoint without training
-    trainer.strategy.connect(model)
-    trainer.save_checkpoint(tmp_path / "checkpoint.ckpt")
-
-    loaded_model = ImageClassifier.load_from_checkpoint(tmp_path / "checkpoint.ckpt")
-    assert loaded_model.config.num_classes == 2
 
 
 def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -9,16 +9,19 @@
 
 import argparse
 import shutil
+import ssl
 import sys
 import urllib.request
 import zipfile
 from pathlib import Path
 
-# Windows 需要特殊处理 SSL
-if sys.platform == "win32":
-    import ssl
 
-    ssl._create_default_https_context = ssl._create_unverified_context
+# Windows 需要特殊处理 SSL
+def _create_download_context() -> ssl.SSLContext | None:
+    """Create SSL context — skip verification on Windows for proxy compatibility."""
+    if sys.platform == "win32":
+        return ssl._create_unverified_context()
+    return None
 
 
 def download_from_stanford(data_dir: Path) -> bool:
@@ -52,7 +55,10 @@ def download_from_stanford(data_dir: Path) -> bool:
         print(f"[下载] {url}")
         print("文件大小约 237MB，请耐心等待...")
         try:
-            urllib.request.urlretrieve(url, zip_path, reporthook=_download_progress)
+            context = _create_download_context()
+            urllib.request.urlretrieve(
+                url, zip_path, reporthook=_download_progress, context=context
+            )
             print("\n[完成] 下载完成")
         except Exception as e:
             print(f"\n[错误] 下载失败: {e}")

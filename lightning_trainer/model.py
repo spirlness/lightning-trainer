@@ -10,7 +10,7 @@ from pytorch_lightning import LightningModule
 from torchvision.models import ConvNeXt_Tiny_Weights, convnext_tiny
 
 
-@dataclass
+@dataclass(frozen=True)
 class ImageClassifierConfig:
     num_classes: int = 200
     lr: float = 1e-4
@@ -35,10 +35,11 @@ class ImageClassifier(LightningModule):
         if config is None:
             config = ImageClassifierConfig(**kwargs)
         elif kwargs:
+            keys = list(kwargs)
             raise ValueError(
                 "Cannot provide both a `config` object and additional keyword "
-                f"arguments: {list(kwargs.keys())}. Please either pass only "
-                "kwargs or update the config object before passing it."
+                f"arguments: {keys}. Please either pass only kwargs or update "
+                "the config object before passing it."
             )
         self.config = config
         self.save_hyperparameters(asdict(config))
@@ -104,7 +105,7 @@ class ImageClassifier(LightningModule):
         images, labels = batch
         if self.config.use_channels_last:
             images = images.to(memory_format=torch.channels_last)
-        images = images.to(self.dtype, copy=False)
+        images = images.to(self.dtype)
         images.div_(255.0).sub_(self.mean).div_(self.std)
         logits = self(images)
         loss = F.cross_entropy(logits, labels)

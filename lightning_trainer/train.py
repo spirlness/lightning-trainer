@@ -174,6 +174,10 @@ def main() -> None:
 
     trainer.fit(model, data_module)
 
+    # 如果测试数据存在，评估最佳 checkpoint
+    if data_module.test_dataset is not None:
+        trainer.test(model, data_module, ckpt_path="best")
+
 
 if __name__ == "__main__":
     main()

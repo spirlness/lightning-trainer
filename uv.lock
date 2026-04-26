@@ -652,19 +652,17 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "datasets" },
+    { name = "pillow" },
     { name = "pytest" },
     { name = "ruff" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "datasets" },
-    { name = "pillow" },
-]
-
 [package.metadata]
 requires-dist = [
+    { name = "datasets", marker = "extra == 'dev'", specifier = ">=4.8.4" },
     { name = "pillow", specifier = ">=10.0" },
+    { name = "pillow", marker = "extra == 'dev'", specifier = ">=12.2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytorch-lightning", specifier = ">=2.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.3.0" },
@@ -673,12 +671,6 @@ requires-dist = [
     { name = "triton-windows", marker = "sys_platform == 'win32'", specifier = "==3.6.0.post26" },
 ]
 provides-extras = ["dev"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "datasets", specifier = ">=4.8.4" },
-    { name = "pillow", specifier = ">=12.2.0" },
-]
 
 [[package]]
 name = "lightning-utilities"

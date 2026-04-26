@@ -18,7 +18,7 @@ class ClassificationDataset(Protocol):
 class CachedTensorDataset(Dataset):
     """Memory-mapped tensor cache for fixed-size RGB images."""
 
-    def __init__(self, split_dir: Path, normalize: transforms.Normalize) -> None:
+    def __init__(self, split_dir: Path, normalize: torch.nn.Module) -> None:
         manifest_path = split_dir / "manifest.json"
         labels_path = split_dir / "labels.pt"
         images_path = split_dir / "images.bin"
@@ -44,7 +44,7 @@ class CachedTensorDataset(Dataset):
         return self.num_samples
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        image = self.images[index].to(torch.float32).div_(255.0)
+        image = self.images[index].to(torch.float32)
         label = self.labels[index]
         return self.normalize(image), label
 
@@ -123,7 +123,7 @@ class TinyImageNetDataModule(LightningDataModule):
                 transforms.RandomHorizontalFlip(),
             ]
         )
-        val_transform = None
+        val_transform: torch.nn.Module = torch.nn.Identity()
 
         self.train_dataset = CachedTensorDataset(train_dir, train_transform)
         self.val_dataset = CachedTensorDataset(val_dir, val_transform)
