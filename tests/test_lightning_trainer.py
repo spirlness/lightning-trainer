@@ -142,6 +142,25 @@ def test_image_classifier_forward() -> None:
     assert output.shape == (2, 2)
 
 
+def test_test_step() -> None:
+    model = ImageClassifier(
+        ImageClassifierConfig(
+            num_classes=2,
+            pretrained=False,
+            compile_model=False,
+            use_channels_last=False,
+        )
+    )
+
+    # Mock log to avoid missing trainer errors
+    from unittest.mock import MagicMock
+
+    model.log = MagicMock()
+
+    batch = (torch.randn(2, 3, 32, 32), torch.randint(0, 2, (2,)))
+    model.test_step(batch, 0)
+
+
 def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
     with pytest.warns(UserWarning, match="not supported"):
         ImageClassifier(
