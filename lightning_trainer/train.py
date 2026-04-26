@@ -96,6 +96,8 @@ def setup_msvc() -> None:
 
 def main() -> None:
     torch.set_float32_matmul_precision("high")
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
     parser = argparse.ArgumentParser(
         description="Tiny-ImageNet 训练",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

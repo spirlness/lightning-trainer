@@ -15,3 +15,5 @@ lightning_logs/
 uv.lock
 *.egg-info/
 .claude/
+AGENTS.md
+CLAUDE.md

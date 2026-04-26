@@ -97,6 +97,8 @@ def main() -> None:
         raise RuntimeError("CUDA is required for this benchmark")
 
     torch.set_float32_matmul_precision("high")
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
     compile_model = not args.no_compile
     if compile_model:
         setup_msvc()
