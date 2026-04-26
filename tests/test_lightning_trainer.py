@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import sys
+
 import pytest
 import pytorch_lightning as pl
 import torch
@@ -8,6 +10,7 @@ from PIL import Image
 
 from lightning_trainer.data import TinyImageNetDataModule
 from lightning_trainer.model import ImageClassifier, ImageClassifierConfig
+from lightning_trainer.train import main
 
 
 def make_imagefolder(root: Path, classes: list[str] | None = None) -> Path:
@@ -253,3 +256,42 @@ def test_configure_optimizers_branches(
     assert isinstance(
         scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
     )
+    # create a fake batch to save checkpoint without training
+    trainer.strategy.connect(model)
+    trainer.save_checkpoint(tmp_path / "checkpoint.ckpt")
+
+    loaded_model = ImageClassifier.load_from_checkpoint(tmp_path / "checkpoint.ckpt")
+    assert loaded_model.config.num_classes == 2
+
+
+def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data_dir = make_imagefolder(tmp_path / "data")
+
+    # Mock CLI arguments
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train.py",
+            "--data-dir", str(data_dir),
+            "--cache-dir", "",
+            "--batch-size", "2",
+            "--max-epochs", "1",
+            "--no-compile"
+        ]
+    )
+
+    # Ensure outputs are written to the temp path
+    monkeypatch.chdir(tmp_path)
+
+    # Force CPU to make tests reliable and fast
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 0)
+
+    # Call the main function
+    main()
+
+    # Verify outputs were created
+    outputs_dir = tmp_path / "outputs"
+    assert outputs_dir.exists()
+    assert (outputs_dir / "lightning_trainer").exists()
