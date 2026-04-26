@@ -190,54 +190,6 @@ def test_lightning_cpu_smoke_train(
     assert trainer.state.finished
 
 
-def test_configure_optimizers_with_fused_adamw(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    model = ImageClassifier(
-        ImageClassifierConfig(
-            num_classes=2,
-            pretrained=False,
-            compile_model=False,
-            use_fused_optimizer=True,
-        )
-    )
-
-    config = model.configure_optimizers()
-    optimizer = config["optimizer"]
-    scheduler_dict = config["lr_scheduler"]
-
-    assert isinstance(optimizer, torch.optim.AdamW)
-    assert optimizer.defaults.get("fused") is True
-    assert isinstance(
-        scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
-    )
-
-
-def test_configure_optimizers_without_fused_adamw(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    model = ImageClassifier(
-        ImageClassifierConfig(
-            num_classes=2,
-            pretrained=False,
-            compile_model=False,
-            use_fused_optimizer=True,
-        )
-    )
-
-    config = model.configure_optimizers()
-    optimizer = config["optimizer"]
-    scheduler_dict = config["lr_scheduler"]
-
-    assert isinstance(optimizer, torch.optim.AdamW)
-    assert optimizer.defaults.get("fused") is not True
-    assert isinstance(
-        scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
-    )
-
-
 def test_checkpointing(tmp_path: Path) -> None:
     model = ImageClassifier(
         ImageClassifierConfig(
@@ -254,6 +206,55 @@ def test_checkpointing(tmp_path: Path) -> None:
         logger=False,
         enable_checkpointing=True,
         default_root_dir=tmp_path,
+    )
+    # create a fake batch to save checkpoint without training
+    trainer.strategy.connect(model)
+    trainer.save_checkpoint(tmp_path / "checkpoint.ckpt")
+
+    loaded_model = ImageClassifier.load_from_checkpoint(tmp_path / "checkpoint.ckpt")
+    assert loaded_model.config.num_classes == 2
+
+
+@pytest.mark.parametrize(
+    "use_fused_optimizer, cuda_available, expect_fused",
+    [
+        (True, True, True),
+        (True, False, False),
+        (False, True, False),
+        (False, False, False),
+    ],
+)
+def test_configure_optimizers_branches(
+    monkeypatch: pytest.MonkeyPatch,
+    use_fused_optimizer: bool,
+    cuda_available: bool,
+    expect_fused: bool,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available)
+    model = ImageClassifier(
+        ImageClassifierConfig(
+            num_classes=2,
+            pretrained=False,
+            compile_model=False,
+            use_fused_optimizer=use_fused_optimizer,
+        )
+    )
+
+    config = model.configure_optimizers()
+    optimizer = config["optimizer"]
+    scheduler_dict = config["lr_scheduler"]
+
+    assert isinstance(optimizer, torch.optim.AdamW)
+
+    # When expect_fused is True, defaults["fused"] should be True
+    # When expect_fused is False, defaults["fused"] could be missing or not True
+    if expect_fused:
+        assert optimizer.defaults.get("fused") is True
+    else:
+        assert optimizer.defaults.get("fused") is not True
+
+    assert isinstance(
+        scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
     )
     # create a fake batch to save checkpoint without training
     trainer.strategy.connect(model)
