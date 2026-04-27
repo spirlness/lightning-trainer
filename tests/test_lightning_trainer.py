@@ -12,9 +12,14 @@ from lightning_trainer.model import ImageClassifier, ImageClassifierConfig
 from lightning_trainer.train import main
 
 
-def make_imagefolder(root: Path, classes: list[str] | None = None) -> Path:
+def make_imagefolder(
+    root: Path,
+    classes: list[str] | None = None,
+    splits: list[str] | None = None,
+) -> Path:
     classes = classes or ["class_a", "class_b"]
-    for split in ["train", "val"]:
+    splits = splits or ["train", "val"]
+    for split in splits:
         for class_index, class_name in enumerate(classes):
             class_dir = root / split / class_name
             class_dir.mkdir(parents=True, exist_ok=True)
@@ -146,20 +151,20 @@ def test_normalization_rejects_double_div(tmp_path: Path) -> None:
     # Build a tiny cached dataset with known uint8 values
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(parents=True)
-    images_tensor = torch.tensor(
-        [[[[100]], [[150]], [[200]]]], dtype=torch.uint8
-    )
+    images_tensor = torch.tensor([[[[100]], [[150]], [[200]]]], dtype=torch.uint8)
     labels_tensor = torch.zeros(1, dtype=torch.long)
     (cache_dir / "images.bin").write_bytes(images_tensor.numpy().tobytes())
     torch.save(labels_tensor, cache_dir / "labels.pt")
     (cache_dir / "manifest.json").write_text(
-        json.dumps({
-            "format": "uint8_chw_bin_v1",
-            "split": "val",
-            "num_samples": 1,
-            "image_size": 1,
-            "classes": ["class_a"],
-        }),
+        json.dumps(
+            {
+                "format": "uint8_chw_bin_v1",
+                "split": "val",
+                "num_samples": 1,
+                "image_size": 1,
+                "classes": ["class_a"],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -338,7 +343,7 @@ def test_configure_optimizers_branches(
 
 
 def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    data_dir = make_imagefolder(tmp_path / "data")
+    data_dir = make_imagefolder(tmp_path / "data", splits=["train", "val", "test"])
 
     # Mock CLI arguments
     monkeypatch.setattr(
@@ -346,12 +351,17 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "argv",
         [
             "train.py",
-            "--data-dir", str(data_dir),
-            "--cache-dir", "",
-            "--batch-size", "2",
-            "--max-epochs", "1",
-            "--no-compile"
-        ]
+            "--data-dir",
+            str(data_dir),
+            "--cache-dir",
+            "",
+            "--batch-size",
+            "2",
+            "--max-epochs",
+            "1",
+            "--no-compile",
+            "--no-pretrained",
+        ],
     )
 
     # Ensure outputs are written to the temp path
