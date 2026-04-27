@@ -146,20 +146,20 @@ def test_normalization_rejects_double_div(tmp_path: Path) -> None:
     # Build a tiny cached dataset with known uint8 values
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(parents=True)
-    images_tensor = torch.tensor(
-        [[[[100]], [[150]], [[200]]]], dtype=torch.uint8
-    )
+    images_tensor = torch.tensor([[[[100]], [[150]], [[200]]]], dtype=torch.uint8)
     labels_tensor = torch.zeros(1, dtype=torch.long)
     (cache_dir / "images.bin").write_bytes(images_tensor.numpy().tobytes())
     torch.save(labels_tensor, cache_dir / "labels.pt")
     (cache_dir / "manifest.json").write_text(
-        json.dumps({
-            "format": "uint8_chw_bin_v1",
-            "split": "val",
-            "num_samples": 1,
-            "image_size": 1,
-            "classes": ["class_a"],
-        }),
+        json.dumps(
+            {
+                "format": "uint8_chw_bin_v1",
+                "split": "val",
+                "num_samples": 1,
+                "image_size": 1,
+                "classes": ["class_a"],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -202,7 +202,8 @@ def test_image_classifier_forward() -> None:
     assert output.shape == (2, 2)
 
 
-def test_test_step() -> None:
+@pytest.mark.parametrize("step_name", ["training_step", "validation_step", "test_step"])
+def test_step_functions(step_name: str) -> None:
     model = ImageClassifier(
         ImageClassifierConfig(
             num_classes=2,
@@ -218,7 +219,10 @@ def test_test_step() -> None:
     model.log = MagicMock()
 
     batch = (torch.randn(2, 3, 32, 32), torch.randint(0, 2, (2,)))
-    model.test_step(batch, 0)
+
+    # Call the appropriate step function
+    step_fn = getattr(model, step_name)
+    step_fn(batch, 0)
 
 
 def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
@@ -346,12 +350,16 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "argv",
         [
             "train.py",
-            "--data-dir", str(data_dir),
-            "--cache-dir", "",
-            "--batch-size", "2",
-            "--max-epochs", "1",
-            "--no-compile"
-        ]
+            "--data-dir",
+            str(data_dir),
+            "--cache-dir",
+            "",
+            "--batch-size",
+            "2",
+            "--max-epochs",
+            "1",
+            "--no-compile",
+        ],
     )
 
     # Ensure outputs are written to the temp path
