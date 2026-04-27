@@ -12,9 +12,14 @@ from lightning_trainer.model import ImageClassifier, ImageClassifierConfig
 from lightning_trainer.train import main
 
 
-def make_imagefolder(root: Path, classes: list[str] | None = None) -> Path:
+def make_imagefolder(
+    root: Path,
+    classes: list[str] | None = None,
+    splits: list[str] | None = None,
+) -> Path:
     classes = classes or ["class_a", "class_b"]
-    for split in ["train", "val"]:
+    splits = splits or ["train", "val"]
+    for split in splits:
         for class_index, class_name in enumerate(classes):
             class_dir = root / split / class_name
             class_dir.mkdir(parents=True, exist_ok=True)
@@ -338,7 +343,7 @@ def test_configure_optimizers_branches(
 
 
 def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    data_dir = make_imagefolder(tmp_path / "data")
+    data_dir = make_imagefolder(tmp_path / "data", splits=["train", "val", "test"])
 
     # Mock CLI arguments
     monkeypatch.setattr(
@@ -350,7 +355,7 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             "--cache-dir", "",
             "--batch-size", "2",
             "--max-epochs", "1",
-            "--no-compile"
+            "--no-pretrained"
         ]
     )
 
