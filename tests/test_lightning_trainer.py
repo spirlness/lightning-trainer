@@ -92,6 +92,31 @@ def write_cache_split(
     )
 
 
+def test_cached_tensor_dataset_incomplete_files(tmp_path: Path) -> None:
+    from lightning_trainer.data import CachedTensorDataset
+    import torch.nn as nn
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True)
+    manifest_path = cache_dir / "manifest.json"
+    manifest_path.write_text(json.dumps({"format": "uint8_chw_bin_v1"}), encoding="utf-8")
+
+    # Both labels.pt and images.bin are missing
+    with pytest.raises(FileNotFoundError, match="缓存文件不完整"):
+        CachedTensorDataset(cache_dir, nn.Identity())
+
+    # Only images.bin is missing
+    (cache_dir / "labels.pt").touch()
+    with pytest.raises(FileNotFoundError, match="缓存文件不完整"):
+        CachedTensorDataset(cache_dir, nn.Identity())
+
+    # Only labels.pt is missing
+    (cache_dir / "labels.pt").unlink()
+    (cache_dir / "images.bin").touch()
+    with pytest.raises(FileNotFoundError, match="缓存文件不完整"):
+        CachedTensorDataset(cache_dir, nn.Identity())
+
+
 def test_datamodule_reads_tensor_cache(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     classes = ["class_a", "class_b"]
