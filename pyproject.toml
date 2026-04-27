@@ -62,3 +62,7 @@ filterwarnings = [
   "ignore:The 'train_dataloader' does not have many workers:UserWarning",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.1.0",
+]
