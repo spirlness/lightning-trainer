@@ -92,6 +92,29 @@ def write_cache_split(
     )
 
 
+def test_cached_tensor_dataset_missing_files(tmp_path: Path) -> None:
+    import torch.nn as nn
+
+    from lightning_trainer.data import CachedTensorDataset
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True)
+
+    # Test 1: missing manifest.json
+    with pytest.raises(FileNotFoundError, match="缓存 manifest 不存在"):
+        CachedTensorDataset(cache_dir, nn.Identity())
+
+    # Test 2: manifest exists, missing labels.pt and images.bin
+    (cache_dir / "manifest.json").write_text("{}")
+    with pytest.raises(FileNotFoundError, match="缓存文件不完整"):
+        CachedTensorDataset(cache_dir, nn.Identity())
+
+    # Test 3: manifest and labels exist, missing images.bin
+    (cache_dir / "labels.pt").write_bytes(b"")
+    with pytest.raises(FileNotFoundError, match="缓存文件不完整"):
+        CachedTensorDataset(cache_dir, nn.Identity())
+
+
 def test_datamodule_reads_tensor_cache(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     classes = ["class_a", "class_b"]
@@ -146,20 +169,20 @@ def test_normalization_rejects_double_div(tmp_path: Path) -> None:
     # Build a tiny cached dataset with known uint8 values
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(parents=True)
-    images_tensor = torch.tensor(
-        [[[[100]], [[150]], [[200]]]], dtype=torch.uint8
-    )
+    images_tensor = torch.tensor([[[[100]], [[150]], [[200]]]], dtype=torch.uint8)
     labels_tensor = torch.zeros(1, dtype=torch.long)
     (cache_dir / "images.bin").write_bytes(images_tensor.numpy().tobytes())
     torch.save(labels_tensor, cache_dir / "labels.pt")
     (cache_dir / "manifest.json").write_text(
-        json.dumps({
-            "format": "uint8_chw_bin_v1",
-            "split": "val",
-            "num_samples": 1,
-            "image_size": 1,
-            "classes": ["class_a"],
-        }),
+        json.dumps(
+            {
+                "format": "uint8_chw_bin_v1",
+                "split": "val",
+                "num_samples": 1,
+                "image_size": 1,
+                "classes": ["class_a"],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -346,12 +369,16 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "argv",
         [
             "train.py",
-            "--data-dir", str(data_dir),
-            "--cache-dir", "",
-            "--batch-size", "2",
-            "--max-epochs", "1",
-            "--no-compile"
-        ]
+            "--data-dir",
+            str(data_dir),
+            "--cache-dir",
+            "",
+            "--batch-size",
+            "2",
+            "--max-epochs",
+            "1",
+            "--no-compile",
+        ],
     )
 
     # Ensure outputs are written to the temp path
