@@ -340,6 +340,14 @@ def test_configure_optimizers_branches(
 def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     data_dir = make_imagefolder(tmp_path / "data")
 
+    # Add a test split to ensure trainer.test() is executed
+    for class_index, class_name in enumerate(["class_a", "class_b"]):
+        class_dir = data_dir / "test" / class_name
+        class_dir.mkdir(parents=True, exist_ok=True)
+        for image_index in range(2):
+            image = Image.new("RGB", (32, 32), color=(class_index * 80, image_index * 80, 128))
+            image.save(class_dir / f"{image_index}.jpg")
+
     # Mock CLI arguments
     monkeypatch.setattr(
         sys,
@@ -350,7 +358,8 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             "--cache-dir", "",
             "--batch-size", "2",
             "--max-epochs", "1",
-            "--no-compile"
+            "--no-compile",
+            "--no-pretrained"
         ]
     )
 
@@ -360,6 +369,19 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Force CPU to make tests reliable and fast
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 0)
+
+    # Patch num_workers to 0 to prevent multiprocessing timeouts/deadlocks
+    import lightning_trainer.train
+    original_init = lightning_trainer.train.TinyImageNetDataModule.__init__
+
+    def new_init(self, *args, **kwargs):
+        kwargs["num_workers"] = 0
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(lightning_trainer.train.TinyImageNetDataModule, "__init__", new_init)
+
+    # Prevent thread contention
+    torch.set_num_threads(1)
 
     # Call the main function
     main()
