@@ -92,6 +92,25 @@ def write_cache_split(
     )
 
 
+def test_cached_tensor_dataset_incomplete_files(tmp_path: Path) -> None:
+    from lightning_trainer.data import CachedTensorDataset
+    import torch.nn as nn
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True)
+
+    # Test missing manifest.json
+    with pytest.raises(FileNotFoundError, match="缓存 manifest 不存在"):
+        CachedTensorDataset(cache_dir, nn.Identity())
+
+    # Create manifest.json but not labels.pt/images.bin
+    manifest_path = cache_dir / "manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError, match="缓存文件不完整"):
+        CachedTensorDataset(cache_dir, nn.Identity())
+
+
 def test_datamodule_reads_tensor_cache(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     classes = ["class_a", "class_b"]
