@@ -146,20 +146,20 @@ def test_normalization_rejects_double_div(tmp_path: Path) -> None:
     # Build a tiny cached dataset with known uint8 values
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(parents=True)
-    images_tensor = torch.tensor(
-        [[[[100]], [[150]], [[200]]]], dtype=torch.uint8
-    )
+    images_tensor = torch.tensor([[[[100]], [[150]], [[200]]]], dtype=torch.uint8)
     labels_tensor = torch.zeros(1, dtype=torch.long)
     (cache_dir / "images.bin").write_bytes(images_tensor.numpy().tobytes())
     torch.save(labels_tensor, cache_dir / "labels.pt")
     (cache_dir / "manifest.json").write_text(
-        json.dumps({
-            "format": "uint8_chw_bin_v1",
-            "split": "val",
-            "num_samples": 1,
-            "image_size": 1,
-            "classes": ["class_a"],
-        }),
+        json.dumps(
+            {
+                "format": "uint8_chw_bin_v1",
+                "split": "val",
+                "num_samples": 1,
+                "image_size": 1,
+                "classes": ["class_a"],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -202,7 +202,8 @@ def test_image_classifier_forward() -> None:
     assert output.shape == (2, 2)
 
 
-def test_test_step() -> None:
+@pytest.mark.parametrize("step_name", ["training_step", "validation_step", "test_step"])
+def test_model_steps(step_name: str) -> None:
     model = ImageClassifier(
         ImageClassifierConfig(
             num_classes=2,
@@ -218,7 +219,8 @@ def test_test_step() -> None:
     model.log = MagicMock()
 
     batch = (torch.randn(2, 3, 32, 32), torch.randint(0, 2, (2,)))
-    model.test_step(batch, 0)
+    step_fn = getattr(model, step_name)
+    step_fn(batch, 0)
 
 
 def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
@@ -346,12 +348,16 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "argv",
         [
             "train.py",
-            "--data-dir", str(data_dir),
-            "--cache-dir", "",
-            "--batch-size", "2",
-            "--max-epochs", "1",
-            "--no-compile"
-        ]
+            "--data-dir",
+            str(data_dir),
+            "--cache-dir",
+            "",
+            "--batch-size",
+            "2",
+            "--max-epochs",
+            "1",
+            "--no-compile",
+        ],
     )
 
     # Ensure outputs are written to the temp path
@@ -368,3 +374,54 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     outputs_dir = tmp_path / "outputs"
     assert outputs_dir.exists()
     assert (outputs_dir / "lightning_trainer").exists()
+
+
+def test_image_classifier_config_and_kwargs_raises() -> None:
+    with pytest.raises(ValueError, match="Cannot provide both a `config` object"):
+        ImageClassifier(config=ImageClassifierConfig(), num_classes=10)
+
+
+def test_gradient_checkpointing_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+
+    import torchvision.models
+
+    original_convnext = torchvision.models.convnext_tiny
+
+    def mock_convnext(*args, **kwargs):
+        model = original_convnext(*args, **kwargs)
+        model.gradient_checkpointing_enable = MagicMock()
+        return model
+
+    monkeypatch.setattr("lightning_trainer.model.convnext_tiny", mock_convnext)
+
+    model = ImageClassifier(
+        ImageClassifierConfig(
+            pretrained=False,
+            use_gradient_checkpointing=True,
+        )
+    )
+    model.model.gradient_checkpointing_enable.assert_called_once()
+
+
+def test_setup_compiles_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+
+    import torch
+    import torch.nn as nn
+
+    dummy_module = nn.Identity()
+    compile_mock = MagicMock(return_value=dummy_module)
+    monkeypatch.setattr(torch, "compile", compile_mock)
+
+    model = ImageClassifier(
+        ImageClassifierConfig(
+            pretrained=False,
+            compile_model=True,
+        )
+    )
+    model.setup()
+
+    compile_mock.assert_called_once()
+    assert model.model is dummy_module
+    assert model._compiled is True
