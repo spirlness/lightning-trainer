@@ -146,20 +146,20 @@ def test_normalization_rejects_double_div(tmp_path: Path) -> None:
     # Build a tiny cached dataset with known uint8 values
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(parents=True)
-    images_tensor = torch.tensor(
-        [[[[100]], [[150]], [[200]]]], dtype=torch.uint8
-    )
+    images_tensor = torch.tensor([[[[100]], [[150]], [[200]]]], dtype=torch.uint8)
     labels_tensor = torch.zeros(1, dtype=torch.long)
     (cache_dir / "images.bin").write_bytes(images_tensor.numpy().tobytes())
     torch.save(labels_tensor, cache_dir / "labels.pt")
     (cache_dir / "manifest.json").write_text(
-        json.dumps({
-            "format": "uint8_chw_bin_v1",
-            "split": "val",
-            "num_samples": 1,
-            "image_size": 1,
-            "classes": ["class_a"],
-        }),
+        json.dumps(
+            {
+                "format": "uint8_chw_bin_v1",
+                "split": "val",
+                "num_samples": 1,
+                "image_size": 1,
+                "classes": ["class_a"],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -295,46 +295,52 @@ def test_checkpointing(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "use_fused_optimizer, cuda_available, expect_fused",
+    "use_fused, is_available",
     [
-        (True, True, True),
-        (True, False, False),
-        (False, True, False),
-        (False, False, False),
+        (True, True),
+        (True, False),
+        (False, True),
+        (False, False),
     ],
 )
-def test_configure_optimizers_branches(
+def test_configure_optimizers(
     monkeypatch: pytest.MonkeyPatch,
-    use_fused_optimizer: bool,
-    cuda_available: bool,
-    expect_fused: bool,
+    use_fused: bool,
+    is_available: bool,
 ) -> None:
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: is_available)
+
     model = ImageClassifier(
         ImageClassifierConfig(
             num_classes=2,
             pretrained=False,
             compile_model=False,
-            use_fused_optimizer=use_fused_optimizer,
+            use_fused_optimizer=use_fused,
         )
     )
 
-    config = model.configure_optimizers()
-    optimizer = config["optimizer"]
-    scheduler_dict = config["lr_scheduler"]
+    optim_config = model.configure_optimizers()
 
-    assert isinstance(optimizer, torch.optim.AdamW)
+    # Assert return types
+    assert isinstance(optim_config, dict)
+    assert "optimizer" in optim_config
+    assert "lr_scheduler" in optim_config
 
-    # When expect_fused is True, defaults["fused"] should be True
-    # When expect_fused is False, defaults["fused"] could be missing or not True
-    if expect_fused:
-        assert optimizer.defaults.get("fused") is True
-    else:
-        assert optimizer.defaults.get("fused") is not True
+    opt = optim_config["optimizer"]
+    sched_dict = optim_config["lr_scheduler"]
 
+    assert isinstance(opt, torch.optim.AdamW)
+    assert isinstance(sched_dict, dict)
     assert isinstance(
-        scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
+        sched_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
     )
+    assert sched_dict["interval"] == "epoch"
+
+    # Assert fused branch is correctly covered
+    if use_fused and is_available:
+        assert opt.defaults.get("fused") is True
+    else:
+        assert opt.defaults.get("fused") is not True
 
 
 def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -346,12 +352,16 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "argv",
         [
             "train.py",
-            "--data-dir", str(data_dir),
-            "--cache-dir", "",
-            "--batch-size", "2",
-            "--max-epochs", "1",
-            "--no-compile"
-        ]
+            "--data-dir",
+            str(data_dir),
+            "--cache-dir",
+            "",
+            "--batch-size",
+            "2",
+            "--max-epochs",
+            "1",
+            "--no-compile",
+        ],
     )
 
     # Ensure outputs are written to the temp path
