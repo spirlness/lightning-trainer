@@ -202,7 +202,8 @@ def test_image_classifier_forward() -> None:
     assert output.shape == (2, 2)
 
 
-def test_test_step() -> None:
+@pytest.mark.parametrize("step_name", ["training_step", "validation_step", "test_step"])
+def test_steps(step_name: str) -> None:
     model = ImageClassifier(
         ImageClassifierConfig(
             num_classes=2,
@@ -218,7 +219,8 @@ def test_test_step() -> None:
     model.log = MagicMock()
 
     batch = (torch.randn(2, 3, 32, 32), torch.randint(0, 2, (2,)))
-    model.test_step(batch, 0)
+    step_fn = getattr(model, step_name)
+    step_fn(batch, 0)
 
 
 def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
