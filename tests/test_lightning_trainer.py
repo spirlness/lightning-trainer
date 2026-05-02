@@ -146,20 +146,20 @@ def test_normalization_rejects_double_div(tmp_path: Path) -> None:
     # Build a tiny cached dataset with known uint8 values
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(parents=True)
-    images_tensor = torch.tensor(
-        [[[[100]], [[150]], [[200]]]], dtype=torch.uint8
-    )
+    images_tensor = torch.tensor([[[[100]], [[150]], [[200]]]], dtype=torch.uint8)
     labels_tensor = torch.zeros(1, dtype=torch.long)
     (cache_dir / "images.bin").write_bytes(images_tensor.numpy().tobytes())
     torch.save(labels_tensor, cache_dir / "labels.pt")
     (cache_dir / "manifest.json").write_text(
-        json.dumps({
-            "format": "uint8_chw_bin_v1",
-            "split": "val",
-            "num_samples": 1,
-            "image_size": 1,
-            "classes": ["class_a"],
-        }),
+        json.dumps(
+            {
+                "format": "uint8_chw_bin_v1",
+                "split": "val",
+                "num_samples": 1,
+                "image_size": 1,
+                "classes": ["class_a"],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -187,6 +187,12 @@ def test_datamodule_rejects_mismatched_classes(tmp_path: Path) -> None:
         module.setup("fit")
 
 
+def test_model_init_raises_value_error() -> None:
+    config = ImageClassifierConfig(num_classes=2)
+    with pytest.raises(ValueError, match="Cannot provide both a `config` object"):
+        ImageClassifier(config=config, num_classes=3)
+
+
 def test_image_classifier_forward() -> None:
     model = ImageClassifier(
         ImageClassifierConfig(
@@ -202,7 +208,8 @@ def test_image_classifier_forward() -> None:
     assert output.shape == (2, 2)
 
 
-def test_test_step() -> None:
+@pytest.mark.parametrize("step_name", ["training_step", "validation_step", "test_step"])
+def test_model_steps(step_name: str) -> None:
     model = ImageClassifier(
         ImageClassifierConfig(
             num_classes=2,
@@ -218,7 +225,8 @@ def test_test_step() -> None:
     model.log = MagicMock()
 
     batch = (torch.randn(2, 3, 32, 32), torch.randint(0, 2, (2,)))
-    model.test_step(batch, 0)
+    step_fn = getattr(model, step_name)
+    step_fn(batch, 0)
 
 
 def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
@@ -230,6 +238,76 @@ def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
                 use_gradient_checkpointing=True,
             )
         )
+
+
+def test_gradient_checkpointing_enable_called(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+
+    from lightning_trainer import model as lt_model
+
+    mock_convnext = MagicMock()
+    mock_convnext.classifier = MagicMock()
+    mock_convnext.classifier[2].in_features = 768
+
+    # Needs to be found via getattr
+    mock_enable = MagicMock()
+    mock_convnext.gradient_checkpointing_enable = mock_enable
+
+    monkeypatch.setattr(lt_model, "convnext_tiny", lambda **kwargs: mock_convnext)
+
+    lt_model.ImageClassifier(
+        ImageClassifierConfig(
+            pretrained=False,
+            compile_model=False,
+            use_gradient_checkpointing=True,
+        )
+    )
+    mock_enable.assert_called_once()
+
+
+def test_setup_compiles_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+
+    # Use a real pass-through dummy module so nn.Module assignment doesn't crash
+    # but track calls using MagicMock wrapper
+    import torch.nn as nn
+
+    from lightning_trainer import model as lt_model
+
+    dummy_compiled = nn.Identity()
+    mock_compile = MagicMock(return_value=dummy_compiled)
+    monkeypatch.setattr(lt_model.torch, "compile", mock_compile)
+
+    model = lt_model.ImageClassifier(
+        ImageClassifierConfig(
+            pretrained=False,
+            compile_model=True,
+            use_channels_last=False,
+        )
+    )
+
+    # Not compiled yet
+    mock_compile.assert_not_called()
+    assert not model._compiled
+
+    # Keep reference to original model to verify it was passed
+    orig_model = model.model
+
+    # Setup triggers compilation
+    model.setup()
+
+    mock_compile.assert_called_once_with(
+        orig_model,
+        backend="inductor",
+        fullgraph=True,
+        mode="max-autotune",
+    )
+    assert model._compiled
+    assert model.model is dummy_compiled
+
+    # Calling setup again doesn't compile again
+    model.setup()
+    mock_compile.assert_called_once()
 
 
 def test_lightning_cpu_smoke_train(
@@ -335,6 +413,9 @@ def test_configure_optimizers_branches(
     assert isinstance(
         scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
     )
+    assert scheduler_dict["interval"] == "epoch"
+    assert "optimizer" in config
+    assert "lr_scheduler" in config
 
 
 def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -346,12 +427,16 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "argv",
         [
             "train.py",
-            "--data-dir", str(data_dir),
-            "--cache-dir", "",
-            "--batch-size", "2",
-            "--max-epochs", "1",
-            "--no-compile"
-        ]
+            "--data-dir",
+            str(data_dir),
+            "--cache-dir",
+            "",
+            "--batch-size",
+            "2",
+            "--max-epochs",
+            "1",
+            "--no-compile",
+        ],
     )
 
     # Ensure outputs are written to the temp path
