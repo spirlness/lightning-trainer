@@ -146,20 +146,20 @@ def test_normalization_rejects_double_div(tmp_path: Path) -> None:
     # Build a tiny cached dataset with known uint8 values
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(parents=True)
-    images_tensor = torch.tensor(
-        [[[[100]], [[150]], [[200]]]], dtype=torch.uint8
-    )
+    images_tensor = torch.tensor([[[[100]], [[150]], [[200]]]], dtype=torch.uint8)
     labels_tensor = torch.zeros(1, dtype=torch.long)
     (cache_dir / "images.bin").write_bytes(images_tensor.numpy().tobytes())
     torch.save(labels_tensor, cache_dir / "labels.pt")
     (cache_dir / "manifest.json").write_text(
-        json.dumps({
-            "format": "uint8_chw_bin_v1",
-            "split": "val",
-            "num_samples": 1,
-            "image_size": 1,
-            "classes": ["class_a"],
-        }),
+        json.dumps(
+            {
+                "format": "uint8_chw_bin_v1",
+                "split": "val",
+                "num_samples": 1,
+                "image_size": 1,
+                "classes": ["class_a"],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -187,6 +187,30 @@ def test_datamodule_rejects_mismatched_classes(tmp_path: Path) -> None:
         module.setup("fit")
 
 
+def test_image_classifier_kwargs_error() -> None:
+    config = ImageClassifierConfig(num_classes=2)
+    with pytest.raises(ValueError, match="Cannot provide both a `config` object"):
+        ImageClassifier(config=config, num_classes=3)
+
+
+def test_setup_compiles_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    import torch.nn as nn
+
+    model = ImageClassifier(
+        ImageClassifierConfig(
+            num_classes=2,
+            pretrained=False,
+            compile_model=True,
+            use_channels_last=False,
+        )
+    )
+    monkeypatch.setattr(torch, "compile", lambda *args, **kwargs: nn.Identity())
+    assert not model._compiled
+    model.setup("fit")
+    assert model._compiled
+    assert isinstance(model.model, nn.Identity)
+
+
 def test_image_classifier_forward() -> None:
     model = ImageClassifier(
         ImageClassifierConfig(
@@ -202,7 +226,8 @@ def test_image_classifier_forward() -> None:
     assert output.shape == (2, 2)
 
 
-def test_test_step() -> None:
+@pytest.mark.parametrize("step_name", ["training_step", "validation_step", "test_step"])
+def test_step_functions(step_name: str) -> None:
     model = ImageClassifier(
         ImageClassifierConfig(
             num_classes=2,
@@ -218,7 +243,8 @@ def test_test_step() -> None:
     model.log = MagicMock()
 
     batch = (torch.randn(2, 3, 32, 32), torch.randint(0, 2, (2,)))
-    model.test_step(batch, 0)
+    step_fn = getattr(model, step_name)
+    step_fn(batch, 0)
 
 
 def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
@@ -230,6 +256,28 @@ def test_gradient_checkpointing_flag_does_not_crash_for_torchvision() -> None:
                 use_gradient_checkpointing=True,
             )
         )
+
+
+def test_gradient_checkpointing_enable_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import MagicMock
+
+    from torchvision.models import convnext_tiny
+
+    mock_model = convnext_tiny(weights=None)
+    mock_model.gradient_checkpointing_enable = MagicMock()
+    monkeypatch.setattr(
+        "lightning_trainer.model.convnext_tiny", lambda *args, **kwargs: mock_model
+    )
+
+    ImageClassifier(
+        ImageClassifierConfig(
+            pretrained=False,
+            compile_model=False,
+            use_gradient_checkpointing=True,
+        )
+    )
+
+    mock_model.gradient_checkpointing_enable.assert_called_once()
 
 
 def test_lightning_cpu_smoke_train(
@@ -303,7 +351,7 @@ def test_checkpointing(tmp_path: Path) -> None:
         (False, False, False),
     ],
 )
-def test_configure_optimizers_branches(
+def test_configure_optimizers(
     monkeypatch: pytest.MonkeyPatch,
     use_fused_optimizer: bool,
     cuda_available: bool,
@@ -316,22 +364,32 @@ def test_configure_optimizers_branches(
             pretrained=False,
             compile_model=False,
             use_fused_optimizer=use_fused_optimizer,
+            lr=1e-3,
+            weight_decay=1e-4,
+            max_epochs=10,
         )
     )
 
     config = model.configure_optimizers()
+
+    assert "optimizer" in config
+    assert "lr_scheduler" in config
+
     optimizer = config["optimizer"]
     scheduler_dict = config["lr_scheduler"]
 
     assert isinstance(optimizer, torch.optim.AdamW)
+    assert optimizer.defaults["lr"] == 1e-3
+    assert optimizer.defaults["weight_decay"] == 1e-4
 
-    # When expect_fused is True, defaults["fused"] should be True
-    # When expect_fused is False, defaults["fused"] could be missing or not True
     if expect_fused:
         assert optimizer.defaults.get("fused") is True
     else:
         assert optimizer.defaults.get("fused") is not True
 
+    assert "scheduler" in scheduler_dict
+    assert "interval" in scheduler_dict
+    assert scheduler_dict["interval"] == "epoch"
     assert isinstance(
         scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
     )
@@ -346,12 +404,16 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "argv",
         [
             "train.py",
-            "--data-dir", str(data_dir),
-            "--cache-dir", "",
-            "--batch-size", "2",
-            "--max-epochs", "1",
-            "--no-compile"
-        ]
+            "--data-dir",
+            str(data_dir),
+            "--cache-dir",
+            "",
+            "--batch-size",
+            "2",
+            "--max-epochs",
+            "1",
+            "--no-compile",
+        ],
     )
 
     # Ensure outputs are written to the temp path
