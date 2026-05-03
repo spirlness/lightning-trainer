@@ -368,3 +368,20 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     outputs_dir = tmp_path / "outputs"
     assert outputs_dir.exists()
     assert (outputs_dir / "lightning_trainer").exists()
+
+
+def test_cached_tensor_dataset_missing_files(tmp_path: Path) -> None:
+    import torch.nn as nn
+    from lightning_trainer.data import CachedTensorDataset
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True)
+
+    # Missing manifest.json
+    with pytest.raises(FileNotFoundError, match="缓存 manifest 不存在"):
+        CachedTensorDataset(cache_dir, nn.Identity())
+
+    # Create manifest.json but missing labels.pt and images.bin
+    (cache_dir / "manifest.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match="缓存文件不完整"):
+        CachedTensorDataset(cache_dir, nn.Identity())
