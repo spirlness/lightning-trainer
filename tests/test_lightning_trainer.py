@@ -146,20 +146,20 @@ def test_normalization_rejects_double_div(tmp_path: Path) -> None:
     # Build a tiny cached dataset with known uint8 values
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(parents=True)
-    images_tensor = torch.tensor(
-        [[[[100]], [[150]], [[200]]]], dtype=torch.uint8
-    )
+    images_tensor = torch.tensor([[[[100]], [[150]], [[200]]]], dtype=torch.uint8)
     labels_tensor = torch.zeros(1, dtype=torch.long)
     (cache_dir / "images.bin").write_bytes(images_tensor.numpy().tobytes())
     torch.save(labels_tensor, cache_dir / "labels.pt")
     (cache_dir / "manifest.json").write_text(
-        json.dumps({
-            "format": "uint8_chw_bin_v1",
-            "split": "val",
-            "num_samples": 1,
-            "image_size": 1,
-            "classes": ["class_a"],
-        }),
+        json.dumps(
+            {
+                "format": "uint8_chw_bin_v1",
+                "split": "val",
+                "num_samples": 1,
+                "image_size": 1,
+                "classes": ["class_a"],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -337,6 +337,42 @@ def test_configure_optimizers_branches(
     )
 
 
+def test_configure_optimizers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Test True branch
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    model = ImageClassifier(
+        ImageClassifierConfig(use_fused_optimizer=True, lr=1e-3, weight_decay=1e-4)
+    )
+    config_dict = model.configure_optimizers()
+
+    assert "optimizer" in config_dict
+    assert "lr_scheduler" in config_dict
+
+    optimizer = config_dict["optimizer"]
+    assert isinstance(optimizer, torch.optim.AdamW)
+    assert optimizer.defaults.get("fused") is True
+
+    scheduler_dict = config_dict["lr_scheduler"]
+    assert isinstance(scheduler_dict, dict)
+    assert "scheduler" in scheduler_dict
+    assert isinstance(
+        scheduler_dict["scheduler"], torch.optim.lr_scheduler.CosineAnnealingLR
+    )
+    assert scheduler_dict.get("interval") == "epoch"
+
+    # Test False branch
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    model = ImageClassifier(
+        ImageClassifierConfig(use_fused_optimizer=True, lr=1e-3, weight_decay=1e-4)
+    )
+    config_dict_false = model.configure_optimizers()
+
+    assert "optimizer" in config_dict_false
+    optimizer_false = config_dict_false["optimizer"]
+    assert isinstance(optimizer_false, torch.optim.AdamW)
+    assert optimizer_false.defaults.get("fused") is not True
+
+
 def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     data_dir = make_imagefolder(tmp_path / "data")
 
@@ -346,12 +382,16 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "argv",
         [
             "train.py",
-            "--data-dir", str(data_dir),
-            "--cache-dir", "",
-            "--batch-size", "2",
-            "--max-epochs", "1",
-            "--no-compile"
-        ]
+            "--data-dir",
+            str(data_dir),
+            "--cache-dir",
+            "",
+            "--batch-size",
+            "2",
+            "--max-epochs",
+            "1",
+            "--no-compile",
+        ],
     )
 
     # Ensure outputs are written to the temp path
