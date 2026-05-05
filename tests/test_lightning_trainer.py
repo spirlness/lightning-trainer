@@ -12,9 +12,14 @@ from lightning_trainer.model import ImageClassifier, ImageClassifierConfig
 from lightning_trainer.train import main
 
 
-def make_imagefolder(root: Path, classes: list[str] | None = None) -> Path:
+def make_imagefolder(
+    root: Path,
+    classes: list[str] | None = None,
+    splits: list[str] | None = None,
+) -> Path:
     classes = classes or ["class_a", "class_b"]
-    for split in ["train", "val"]:
+    splits = splits or ["train", "val"]
+    for split in splits:
         for class_index, class_name in enumerate(classes):
             class_dir = root / split / class_name
             class_dir.mkdir(parents=True, exist_ok=True)
@@ -338,7 +343,10 @@ def test_configure_optimizers_branches(
 
 
 def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    data_dir = make_imagefolder(tmp_path / "data")
+    data_dir = make_imagefolder(
+        tmp_path / "data",
+        splits=["train", "val", "test"],
+    )
 
     # Mock CLI arguments
     monkeypatch.setattr(
@@ -350,7 +358,7 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             "--cache-dir", "",
             "--batch-size", "2",
             "--max-epochs", "1",
-            "--no-compile"
+            "--no-pretrained",
         ]
     )
 
@@ -361,6 +369,18 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 0)
 
+    # Prevent DataModule from using multiprocessing which can hang
+    original_init = TinyImageNetDataModule.__init__
+
+    def mock_init(self, *args, **kwargs):
+        kwargs["num_workers"] = 0
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(TinyImageNetDataModule, "__init__", mock_init)
+
+    # Mock torch.compile to prevent slow compilations in CI
+    monkeypatch.setattr(torch, "compile", lambda model, **kwargs: model)
+
     # Call the main function
     main()
 
@@ -368,3 +388,16 @@ def test_main_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     outputs_dir = tmp_path / "outputs"
     assert outputs_dir.exists()
     assert (outputs_dir / "lightning_trainer").exists()
+
+
+def test_main_execution() -> None:
+    import subprocess
+
+    result = subprocess.run(
+        [sys.executable, "-m", "lightning_trainer.train", "--help"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "Tiny-ImageNet 训练" in result.stdout
